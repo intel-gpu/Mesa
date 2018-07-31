@@ -65,6 +65,7 @@ static const struct {
    { "rkl", 0x4c8a },
    { "dg1", 0x4905 },
    { "adl", 0x4680 },
+   { "sg1", 0x4907 },
 };
 
 /**
@@ -988,7 +989,7 @@ static const struct gen_device_info gen_device_info_adl_gt1 = {
    .is_alderlake = true,
 };
 
-#define GFX12_DG1_FEATURES                      \
+#define GFX12_DG1_SG1_FEATURES                  \
    GFX12_GT_FEATURES(2),                        \
    .is_dg1 = true,                              \
    .has_llc = false,                            \
@@ -996,8 +997,12 @@ static const struct gen_device_info gen_device_info_adl_gt1 = {
    .urb.size = 768,                             \
    .simulator_id = 30
 
-UNUSED static const struct gen_device_info gen_device_info_dg1 = {
-   GFX12_DG1_FEATURES,
+static const struct gen_device_info gen_device_info_dg1 = {
+   GFX12_DG1_SG1_FEATURES,
+};
+
+static const struct gen_device_info gen_device_info_sg1 = {
+   GFX12_DG1_SG1_FEATURES,
 };
 
 static void
