@@ -355,7 +355,7 @@ create_batch(struct iris_batch *batch)
    struct iris_bufmgr *bufmgr = screen->bufmgr;
 
    batch->bo = iris_bo_alloc(bufmgr, "command buffer",
-                             BATCH_SZ + BATCH_RESERVED, IRIS_MEMZONE_OTHER, 0);
+                             BATCH_SZ + BATCH_RESERVED, IRIS_MEMZONE_OTHER, BO_ALLOC_CPU);
    batch->bo->kflags |= EXEC_OBJECT_CAPTURE;
    batch->map = iris_bo_map(NULL, batch->bo, MAP_READ | MAP_WRITE);
    batch->map_next = batch->map;
