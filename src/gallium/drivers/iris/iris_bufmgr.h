@@ -237,10 +237,16 @@ struct iris_bo {
     * Boolean of whether this buffer points into user memory
     */
    bool userptr;
+
+   /**
+    * Boolean of whether this was allocated from local memory
+    */
+   bool local;
 };
 
 #define BO_ALLOC_ZEROED     (1<<0)
 #define BO_ALLOC_COHERENT   (1<<1)
+#define BO_ALLOC_CPU        (1<<2)
 
 /**
  * Allocate a buffer object.
@@ -252,7 +258,8 @@ struct iris_bo {
 struct iris_bo *iris_bo_alloc(struct iris_bufmgr *bufmgr,
                               const char *name,
                               uint64_t size,
-                              enum iris_memory_zone memzone);
+                              enum iris_memory_zone memzone,
+                              unsigned flags);
 
 /**
  * Allocate a tiled buffer object.

@@ -919,7 +919,7 @@ iris_resource_create_for_buffer(struct pipe_screen *pscreen,
       name = "dynamic state";
    }
 
-   res->bo = iris_bo_alloc(screen->bufmgr, name, templ->width0, memzone);
+   res->bo = iris_bo_alloc(screen->bufmgr, name, templ->width0, memzone, 0);
    if (!res->bo) {
       iris_resource_destroy(pscreen, &res->base);
       return NULL;
@@ -1374,7 +1374,7 @@ iris_invalidate_resource(struct pipe_context *ctx,
    struct iris_bo *old_bo = res->bo;
    struct iris_bo *new_bo =
       iris_bo_alloc(screen->bufmgr, res->bo->name, resource->width0,
-                    iris_memzone_for_address(old_bo->gtt_offset));
+                    iris_memzone_for_address(old_bo->gtt_offset), 0);
    if (!new_bo)
       return;
 
