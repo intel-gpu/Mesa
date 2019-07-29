@@ -965,7 +965,12 @@ iris_resource_create_for_buffer(struct pipe_screen *pscreen,
       name = "dynamic state";
    }
 
-   res->bo = iris_bo_alloc(screen->bufmgr, name, templ->width0, memzone, 0);
+   unsigned flags = 0;
+   if (templ->usage == PIPE_USAGE_STREAM || templ->usage == PIPE_USAGE_STAGING)
+      flags |= BO_ALLOC_CPU;
+
+   res->bo = iris_bo_alloc(screen->bufmgr, name,
+                           templ->width0, memzone, flags);
    if (!res->bo) {
       iris_resource_destroy(pscreen, &res->base.b);
       return NULL;
@@ -1008,8 +1013,8 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
    enum iris_memory_zone memzone = IRIS_MEMZONE_OTHER;
 
    unsigned int flags = 0;
-   if (templ->usage == PIPE_USAGE_STAGING)
-      flags |= BO_ALLOC_COHERENT;
+   if (templ->usage == PIPE_USAGE_STAGING || templ->usage == PIPE_USAGE_STREAM)
+      flags |= BO_ALLOC_CPU;
 
    /* These are for u_upload_mgr buffers only */
    assert(!(templ->flags & (IRIS_RESOURCE_FLAG_SHADER_MEMZONE |
