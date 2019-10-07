@@ -589,6 +589,33 @@ bo_alloc_internal(struct iris_bufmgr *bufmgr,
    unsigned int page_size = getpagesize();
    bool local = bufmgr->vram.size > 0 &&
       !(flags & BO_ALLOC_COHERENT || flags & BO_ALLOC_CPU);
+
+   static bool force_mem_type = false;
+   static bool force_mem_local = false;
+   static bool force_mem_read = false;
+
+   if (!force_mem_read) {
+      const char *force_mem_env = getenv("FORCE_MEM");
+      if (force_mem_env) {
+         if (!strcmp(force_mem_env, "local")) {
+            force_mem_local = true; /* always use local memory */
+            force_mem_type = true;
+         } else if (!strcmp(force_mem_env, "system")) {
+            force_mem_local = false; /* always use local memory */
+            force_mem_type = true;
+         }
+      }
+      force_mem_read = true;
+
+      if (force_mem_type) {
+         printf("DEBUG: Forcing all memory allocation to come from: %s\n",
+                force_mem_local ? "local" : "system");
+      }
+   }
+
+   if (force_mem_type)
+      local = force_mem_local;
+
    struct bo_cache_bucket *bucket = bucket_for_size(bufmgr, size, local);
 
    /* Round the size up to the bucket size, or if we don't have caching
