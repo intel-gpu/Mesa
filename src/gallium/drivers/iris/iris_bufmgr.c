@@ -763,11 +763,39 @@ fail:
 static enum iris_heap
 flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
 {
+   static bool force_mem_type = false;
+   static bool force_mem_local = false;
+   static bool force_mem_read = false;
+
+   if (!force_mem_read) {
+      const char *force_mem_env = getenv("FORCE_MEM");
+      if (force_mem_env) {
+         if (!strcmp(force_mem_env, "local")) {
+            force_mem_local = true; /* always use local memory */
+            force_mem_type = true;
+         } else if (!strcmp(force_mem_env, "system")) {
+            force_mem_local = false; /* always use local memory */
+            force_mem_type = true;
+         }
+      }
+      force_mem_read = true;
+
+      if (force_mem_type) {
+         printf("DEBUG: Forcing all memory allocation to come from: %s\n",
+                force_mem_local ? "local" : "system");
+      }
+   }
+
    if (bufmgr->vram.size > 0 &&
        !(flags & BO_ALLOC_SMEM) &&
        !(flags & BO_ALLOC_COHERENT)) {
-      return flags & BO_ALLOC_LMEM ? IRIS_HEAP_DEVICE_LOCAL :
-                                     IRIS_HEAP_DEVICE_LOCAL_PREFERRED;
+      if (flags & BO_ALLOC_LMEM)
+         return IRIS_HEAP_DEVICE_LOCAL;
+      else if (likely(!force_mem_type))
+         return IRIS_HEAP_DEVICE_LOCAL_PREFERRED;
+      else
+         return force_mem_local ? IRIS_HEAP_DEVICE_LOCAL :
+                                  IRIS_HEAP_SYSTEM_MEMORY;
    } else {
       assert(!(flags & BO_ALLOC_LMEM));
       return IRIS_HEAP_SYSTEM_MEMORY;
