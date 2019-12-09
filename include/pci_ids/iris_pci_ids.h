@@ -215,8 +215,6 @@ CHIPSET(0x4907, sg1, "SG1", "Intel(R) Graphics")
 CHIPSET(0x4908, dg1, "DG1", "Intel(R) Graphics")
 CHIPSET(0x4909, dg1, "DG1", "Intel(R) Graphics")
 
-/* Waiting on i915 upstream support */
-#if 0
 CHIPSET(0x4f80, dg2_g10, "DG2", "Intel(R) Graphics")
 CHIPSET(0x4f81, dg2_g10, "DG2", "Intel(R) Graphics")
 CHIPSET(0x4f82, dg2_g10, "DG2", "Intel(R) Graphics")
@@ -237,4 +235,3 @@ CHIPSET(0x56a5, dg2_g11, "DG2", "Intel(R) Graphics")
 CHIPSET(0x56a6, dg2_g11, "DG2", "Intel(R) Graphics")
 CHIPSET(0x56b0, dg2_g11, "DG2", "Intel(R) Graphics")
 CHIPSET(0x56b1, dg2_g11, "DG2", "Intel(R) Graphics")
-#endif
