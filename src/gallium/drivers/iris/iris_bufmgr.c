@@ -1294,6 +1294,10 @@ iris_bo_map_gtt(struct pipe_debug_callback *dbg,
 static bool
 can_map_cpu(struct iris_bo *bo, unsigned flags)
 {
+   /* Buffers from local memory can only be mapped WC on the CPU. */
+   if (bo->bufmgr->vram.size > 0 && bo->local)
+      return false;
+
    if (bo->cache_coherent)
       return true;
 
