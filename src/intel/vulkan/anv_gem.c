@@ -65,6 +65,35 @@ anv_gem_close(struct anv_device *device, uint32_t gem_handle)
    gen_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
+uint32_t
+anv_gem_create_ext(struct anv_device *device, uint64_t anv_bo_size,
+                   uint32_t size, uintptr_t data)
+{
+   struct drm_i915_gem_object_param obj_param = {
+      .param = I915_PARAM_MEMORY_REGIONS | I915_OBJECT_PARAM,
+      .size = size,
+      .data = data,
+   };
+
+   struct drm_i915_gem_create_ext_setparam setparam_ext = {
+      .base = { .name = I915_GEM_CREATE_EXT_SETPARAM },
+      .param = obj_param,
+   };
+
+   struct drm_i915_gem_create_ext gem_create = {
+      .size = anv_bo_size,
+      .extensions = (uintptr_t) &setparam_ext,
+   };
+
+   int ret = gen_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT,
+                       &gem_create);
+   if (ret != 0) {
+      return 0;
+   }
+
+   return gem_create.handle;
+}
+
 /**
  * Wrapper around DRM_IOCTL_I915_GEM_MMAP. Returns MAP_FAILED on error.
  */
