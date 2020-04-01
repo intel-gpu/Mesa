@@ -45,6 +45,13 @@ anv_gem_close(struct anv_device *device, uint32_t gem_handle)
    close(gem_handle);
 }
 
+uint32_t
+anv_gem_create_ext(struct anv_device *device, uint64_t anv_bo_size,
+                   uint32_t size, uintptr_t data)
+{
+   return 0;
+}
+
 void*
 anv_gem_mmap(struct anv_device *device, uint32_t gem_handle,
              uint64_t offset, uint64_t size, uint32_t flags)
