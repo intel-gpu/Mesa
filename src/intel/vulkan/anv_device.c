@@ -134,6 +134,53 @@ anv_compute_heap_size(int fd, uint64_t gtt_size)
    return MIN2(available_ram, available_gtt);
 }
 
+static void
+anv_track_meminfo(struct anv_physical_device *device,
+                  const struct drm_i915_query_memory_regions *mem_regions)
+{
+   for(int i = 0; i < mem_regions->num_regions; i++) {
+      switch(mem_regions->regions[i].region.memory_class) {
+         case I915_MEMORY_CLASS_SYSTEM:
+         device->sys.region = mem_regions->regions[i].region;
+         device->sys.size = mem_regions->regions[i].probed_size;
+         break;
+      case I915_MEMORY_CLASS_DEVICE:
+         device->vram.region = mem_regions->regions[i].region;
+         device->vram.size = mem_regions->regions[i].probed_size;
+         break;
+      default:
+         break;
+      }
+   }
+}
+
+static bool
+anv_get_query_meminfo(struct anv_physical_device *device, int fd)
+{
+   struct drm_i915_query_item item = {
+      .query_id = DRM_I915_QUERY_MEMORY_REGIONS
+   };
+
+   struct drm_i915_query query = {
+      .num_items = 1,
+      .items_ptr = (uintptr_t) &item,
+   };
+
+   if (drmIoctl(fd, DRM_IOCTL_I915_QUERY, &query))
+      return false;
+
+   struct drm_i915_query_memory_regions *mem_regions = calloc(1, item.length);
+   item.data_ptr = (uintptr_t) mem_regions;
+
+   if (drmIoctl(fd, DRM_IOCTL_I915_QUERY, &query) || item.length <= 0)
+      return false;
+
+   anv_track_meminfo(device, mem_regions);
+
+   free(mem_regions);
+   return true;
+}
+
 static VkResult
 anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
 {
@@ -159,24 +206,39 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
                                       device->has_softpin &&
                                       device->gtt_size > (4ULL << 30 /* GiB */);
 
-   uint64_t heap_size = anv_compute_heap_size(fd, device->gtt_size);
-
-   if (heap_size > (2ull << 30) && !device->supports_48bit_addresses) {
-      /* When running with an overridden PCI ID, we may get a GTT size from
-       * the kernel that is greater than 2 GiB but the execbuf check for 48bit
-       * address support can still fail.  Just clamp the address space size to
-       * 2 GiB if we don't have 48-bit support.
+   uint64_t heap_size;
+   if (device->info.has_local_mem && anv_get_query_meminfo(device, fd)) {
+      /* We can create 2 different heaps when we have local memory support,
+       * first heap with local memory size and second with system memory size.
        */
-      mesa_logw("%s:%d: The kernel reported a GTT size larger than 2 GiB but "
-                        "not support for 48-bit addresses",
-                        __FILE__, __LINE__);
-      heap_size = 2ull << 30;
+      device->memory.heap_count = 2;
+      device->memory.heaps[1] = (struct anv_memory_heap) {
+         .size = device->sys.size,
+         .flags = 0,
+         .is_local_mem = false,
+      };
+      heap_size = device->vram.size;
+   } else {
+      heap_size = anv_compute_heap_size(fd, device->gtt_size);
+      device->memory.heap_count = 1;
+
+      if (heap_size > (2ull << 30) && !device->supports_48bit_addresses) {
+         /* When running with an overridden PCI ID, we may get a GTT size from
+          * the kernel that is greater than 2 GiB but the execbuf check for 48bit
+          * address support can still fail.  Just clamp the address space size to
+          * 2 GiB if we don't have 48-bit support.
+          */
+         mesa_logw("%s:%d: The kernel reported a GTT size larger than 2 GiB but "
+                          "not support for 48-bit addresses",
+                           __FILE__, __LINE__);
+         heap_size = 2ull << 30;
+      }
    }
 
-   device->memory.heap_count = 1;
    device->memory.heaps[0] = (struct anv_memory_heap) {
       .size = heap_size,
       .flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT,
+      .is_local_mem = device->memory.heap_count > 1,
    };
 
    uint32_t type_count = 0;
@@ -192,6 +254,27 @@ anv_physical_device_init_heaps(struct anv_physical_device *device, int fd)
                              VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
             .heapIndex = heap,
          };
+      } else if (device->info.has_local_mem &&
+                 device->memory.heap_count == 2) {
+         if (device->memory.heaps[heap].is_local_mem) {
+            device->memory.types[type_count++] = (struct anv_memory_type) {
+               .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+               .heapIndex = heap,
+            };
+            device->memory.types[type_count++] = (struct anv_memory_type) {
+               .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+               .heapIndex = heap,
+            };
+         } else {
+            device->memory.types[type_count++] = (struct anv_memory_type) {
+               .propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
+               .heapIndex = heap,
+            };
+         }
       } else {
          /* The spec requires that we expose a host-visible, coherent memory
           * type, but Atom GPUs don't share LLC. Thus we offer two memory types
@@ -412,6 +495,10 @@ anv_physical_device_try_create(struct anv_instance *instance,
       anv_gem_get_drm_cap(fd, DRM_CAP_SYNCOBJ_TIMELINE) != 0;
 
    device->has_context_priority = anv_gem_has_context_priority(fd);
+
+   /* Initialize memory regions struct to 0. */
+   memset(&device->vram, 0, sizeof(device->vram));
+   memset(&device->sys, 0, sizeof(device->sys));
 
    result = anv_physical_device_init_heaps(device, fd);
    if (result != VK_SUCCESS)

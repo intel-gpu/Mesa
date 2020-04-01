@@ -1048,6 +1048,13 @@ struct anv_memory_heap {
     * Align it to 64 bits to make atomic operations faster on 32 bit platforms.
     */
    VkDeviceSize      used __attribute__ ((aligned (8)));
+
+   bool              is_local_mem;
+};
+
+struct anv_memregion {
+   struct drm_i915_gem_memory_class_instance region;
+   uint64_t size;
 };
 
 struct anv_physical_device {
@@ -1135,6 +1142,8 @@ struct anv_physical_device {
       struct anv_memory_heap                    heaps[VK_MAX_MEMORY_HEAPS];
     } memory;
 
+    struct anv_memregion                        vram;
+    struct anv_memregion                        sys;
     uint8_t                                     driver_build_sha1[20];
     uint8_t                                     pipeline_cache_uuid[VK_UUID_SIZE];
     uint8_t                                     driver_uuid[VK_UUID_SIZE];
