@@ -871,6 +871,7 @@ struct anv_memory_heap {
 };
 
 struct anv_memregion {
+   struct drm_i915_gem_memory_class_instance region;
    uint64_t size;
 };
 
