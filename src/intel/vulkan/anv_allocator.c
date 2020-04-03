@@ -1625,6 +1625,32 @@ anv_device_alloc_bo(struct anv_device *device,
    bool alloc_local_mem = device->physical->vram.size > 0 &&
       (alloc_flags & ANV_BO_ALLOC_LOCAL_MEM);
 
+   static bool force_mem_type = false;
+   static bool force_mem_local = false;
+   static bool force_mem_read = false;
+
+   if (!force_mem_read) {
+      const char *force_mem_env = getenv("FORCE_MEM");
+      if (force_mem_env) {
+         if (!strcmp(force_mem_env, "local")) {
+            force_mem_local = true; /* always use local memory */
+            force_mem_type = true;
+         } else if (!strcmp(force_mem_env, "system")) {
+            force_mem_local = false; /* always use system memory */
+            force_mem_type = true;
+         }
+      }
+      force_mem_read = true;
+
+      if (force_mem_type) {
+         printf("DEBUG: Forcing all memory allocation to come from: %s\n",
+                force_mem_local ? "local" : "system");
+      }
+   }
+
+   if (force_mem_type)
+      alloc_local_mem = force_mem_local;
+
    const uint32_t bo_flags =
       anv_bo_alloc_flags_to_bo_flags(device, alloc_flags);
    assert(bo_flags == (bo_flags & ANV_BO_CACHE_SUPPORTED_FLAGS));
