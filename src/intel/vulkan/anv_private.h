@@ -597,6 +597,7 @@ struct anv_block_pool {
 
    struct anv_device *device;
    bool use_softpin;
+   bool is_aux_map;
 
    /* Wrapper BO for use in relocation lists.  This BO is simply a wrapper
     * around the actual BO so that we grow the pool after the wrapper BO has

@@ -2953,6 +2953,7 @@ intel_aux_map_buffer_alloc(void *driver_ctx, uint32_t size)
           device->physical->use_softpin);
 
    struct anv_state_pool *pool = &device->dynamic_state_pool;
+   pool->block_pool.is_aux_map = device->info.has_local_mem;
    buf->state = anv_state_pool_alloc(pool, size, size);
 
    buf->base.gpu = pool->block_pool.bo->offset + buf->state.offset;
