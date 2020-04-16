@@ -371,6 +371,7 @@ anv_block_pool_init(struct anv_block_pool *pool,
 
    pool->device = device;
    pool->use_softpin = device->physical->use_softpin;
+   pool->is_aux_map = false;
    pool->nbos = 0;
    pool->size = 0;
    pool->center_bo_offset = 0;
@@ -490,6 +491,9 @@ anv_block_pool_expand_range(struct anv_block_pool *pool,
    enum anv_bo_alloc_flags bo_alloc_flags = ANV_BO_ALLOC_CAPTURE;
    if (!pool->use_softpin)
       bo_alloc_flags |= ANV_BO_ALLOC_32BIT_ADDRESS;
+
+   if (pool->is_aux_map)
+      bo_alloc_flags |= ANV_BO_ALLOC_LOCAL_MEM;
 
    if (pool->use_softpin) {
       uint32_t new_bo_size = size - pool->size;
