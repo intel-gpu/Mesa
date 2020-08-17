@@ -196,6 +196,8 @@ iris_destroy_context(struct pipe_context *ctx)
 
    if (ctx->stream_uploader)
       u_upload_destroy(ctx->stream_uploader);
+   if (ctx->const_uploader)
+      u_upload_destroy(ctx->const_uploader);
 
    screen->vtbl.destroy_state(ice);
    iris_destroy_program_cache(ice);
@@ -256,7 +258,14 @@ iris_create_context(struct pipe_screen *pscreen, void *priv, unsigned flags)
       free(ctx);
       return NULL;
    }
-   ctx->const_uploader = ctx->stream_uploader;
+   ctx->const_uploader = u_upload_create(ctx, 1024 * 1024,
+                                         PIPE_BIND_CONSTANT_BUFFER,
+                                         PIPE_USAGE_IMMUTABLE, 0);
+   if (!ctx->const_uploader) {
+      u_upload_destroy(ctx->stream_uploader);
+      free(ctx);
+      return NULL;
+   }
 
    ctx->destroy = iris_destroy_context;
    ctx->set_debug_callback = iris_set_debug_callback;
