@@ -4151,7 +4151,7 @@ VkResult anv_MapMemory(
     * pointer here, but that may exhaust virtual memory on 32 bit
     * userspace. */
 
-   uint32_t gem_flags = 0;
+   uint32_t gem_flags = mem->bo->map_wc ? I915_MMAP_WC : 0;
 
    if (!device->info.has_llc &&
        (mem->type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))

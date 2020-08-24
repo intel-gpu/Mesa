@@ -1729,10 +1729,12 @@ anv_device_alloc_bo(struct anv_device *device,
       .has_client_visible_address =
          (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) != 0,
       .has_implicit_ccs = ccs_size > 0,
+      .map_wc = alloc_flags & ANV_BO_ALLOC_WRITE_COMBINE,
    };
 
    if (alloc_flags & ANV_BO_ALLOC_MAPPED) {
-      new_bo.map = anv_gem_mmap(device, new_bo.gem_handle, 0, size, 0);
+      new_bo.map = anv_gem_mmap(device, new_bo.gem_handle, 0, size,
+                                new_bo.map_wc ? I915_MMAP_WC : 0);
       if (new_bo.map == MAP_FAILED) {
          anv_gem_close(device, new_bo.gem_handle);
          return vk_error(VK_ERROR_OUT_OF_HOST_MEMORY);
