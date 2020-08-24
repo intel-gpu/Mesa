@@ -1737,6 +1737,7 @@ anv_device_alloc_bo(struct anv_device *device,
          (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) != 0,
       .has_implicit_ccs = ccs_size > 0 || (device->info.verx10 >= 125 &&
          (alloc_flags & ANV_BO_ALLOC_LOCAL_MEM)),
+      .map_wc = alloc_flags & ANV_BO_ALLOC_WRITE_COMBINE,
    };
 
    if (alloc_flags & ANV_BO_ALLOC_MAPPED) {
@@ -1809,6 +1810,9 @@ anv_device_map_bo(struct anv_device *device,
 {
    assert(!bo->is_wrapper && !bo->from_host_ptr);
    assert(size > 0);
+
+   if (bo->map_wc)
+      gem_flags |= I915_MMAP_WC;
 
    void *map = anv_gem_mmap(device, bo->gem_handle, offset, size, gem_flags);
    if (unlikely(map == MAP_FAILED))
