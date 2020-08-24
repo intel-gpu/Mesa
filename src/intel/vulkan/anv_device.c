@@ -3956,8 +3956,13 @@ VkResult anv_AllocateMemory(
    /* Set ALLOC_LOCAL_MEM flag if heap has device local bit set and requested
     * memory property flag has DEVICE_LOCAL_BIT set.
     */
-   if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+   if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
       alloc_flags |= ANV_BO_ALLOC_LOCAL_MEM;
+
+      if ((mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) &&
+          (!(mem_type->propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)))
+         alloc_flags |= ANV_BO_ALLOC_WRITE_COMBINE;
+   }
 
    /* Regular allocate (not importing memory). */
 
