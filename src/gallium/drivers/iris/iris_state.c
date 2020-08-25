@@ -3629,7 +3629,7 @@ iris_create_stream_output_target(struct pipe_context *ctx,
    util_range_add(&res->base, &res->valid_buffer_range, buffer_offset,
                   buffer_offset + buffer_size);
 
-   upload_state(ctx->stream_uploader, &cso->offset, sizeof(uint32_t), 4);
+   upload_state(ctx->const_uploader, &cso->offset, sizeof(uint32_t), 4);
 
    return &cso->base;
 }
