@@ -207,7 +207,8 @@ VkResult genX(CreateQueryPool)(
    uint64_t size = pool->slots * pool->stride;
    result = anv_device_alloc_bo(device, "query-pool", size,
                                 ANV_BO_ALLOC_MAPPED |
-                                ANV_BO_ALLOC_SNOOPED,
+                                ANV_BO_ALLOC_SNOOPED |
+                                ANV_BO_ALLOC_LOCAL_MEM,
                                 0 /* explicit_address */,
                                 &pool->bo);
    if (result != VK_SUCCESS)
