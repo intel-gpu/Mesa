@@ -3307,7 +3307,8 @@ VkResult anv_CreateDevice(
 
    result = anv_device_alloc_bo(device, "workaround", 4096,
                                 ANV_BO_ALLOC_CAPTURE | ANV_BO_ALLOC_MAPPED |
-                                ANV_BO_ALLOC_LOCAL_MEM /* flags */,
+                                ANV_BO_ALLOC_LOCAL_MEM |
+                                ANV_BO_ALLOC_WRITE_COMBINE /* flags */,
                                 0 /* explicit_address */,
                                 &device->workaround_bo);
    if (result != VK_SUCCESS)
