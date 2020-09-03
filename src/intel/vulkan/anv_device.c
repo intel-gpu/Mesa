@@ -782,8 +782,8 @@ anv_physical_device_try_create(struct anv_instance *instance,
    device->has_context_isolation =
       anv_gem_get_param(fd, I915_PARAM_HAS_CONTEXT_ISOLATION);
 
-   device->has_exec_timeline =
-      anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES);
+   device->has_exec_timeline = false;
+      /* anv_gem_get_param(fd, I915_PARAM_HAS_EXEC_TIMELINE_FENCES); */
    if (env_var_as_boolean("ANV_QUEUE_THREAD_DISABLE", false))
       device->has_exec_timeline = false;
 
