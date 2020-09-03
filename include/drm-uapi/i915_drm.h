@@ -619,12 +619,6 @@ typedef struct drm_i915_irq_wait {
  */
 #define I915_PARAM_PERF_REVISION	54
 
-/* Query whether DRM_I915_GEM_EXECBUFFER2 supports supplying an array of
- * timeline syncobj through drm_i915_gem_execbuffer_ext_timeline_fences. See
- * I915_EXEC_USE_EXTENSIONS.
- */
-#define I915_PARAM_HAS_EXEC_TIMELINE_FENCES 55
-
 /* Must be kept compact -- no holes and well documented */
 
 typedef struct drm_i915_getparam {
