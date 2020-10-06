@@ -51,6 +51,8 @@ util_vma_heap_init(struct util_vma_heap *heap,
 
    /* Default to using high addresses */
    heap->alloc_high = true;
+   heap->start = start;
+   heap->size = size;
 }
 
 void

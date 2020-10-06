@@ -36,6 +36,9 @@ extern "C" {
 struct util_vma_heap {
    struct list_head holes;
 
+   uint64_t start;
+   uint64_t size;
+
    /** If true, util_vma_heap_alloc will prefer high addresses
     *
     * Default is true.
