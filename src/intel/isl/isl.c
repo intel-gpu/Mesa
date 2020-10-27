@@ -112,10 +112,10 @@ isl_device_setup_mocs(struct isl_device *dev)
          dev->mocs.external = 3 << 1;
          /* TC=LLC/eLLC, LeCC=WB, LRUM=3, L3CC=WB */
          dev->mocs.internal = 2 << 1;
-
-         /* L1 - HDC:L1 + L3 + LLC */
-         dev->mocs.l1_hdc_l3_llc = 48 << 1;
       }
+
+      /* L1 - HDC:L1 + L3 + LLC */
+      dev->mocs.l1_hdc_l3_llc = 48 << 1;
    } else if (dev->info->ver >= 9) {
       /* TC=LLC/eLLC, LeCC=PTE, LRUM=3, L3CC=WB */
       dev->mocs.external = 1 << 1;
@@ -167,7 +167,7 @@ isl_mocs(const struct isl_device *dev, isl_surf_usage_flags_t usage,
    if (external)
       return dev->mocs.external;
 
-   if (dev->info->ver >= 12 && !dev->info->is_dg1) {
+   if (dev->info->ver >= 12) {
       if (usage & ISL_SURF_USAGE_STAGING_BIT)
          return dev->mocs.internal;
 
