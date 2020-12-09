@@ -1610,6 +1610,12 @@ static uint32_t
 anv_device_get_bo_align(struct anv_device *device,
                         enum anv_bo_alloc_flags alloc_flags)
 {
+   /* For gfx12-hp, lmem and smem cannot share a single PDE, which means they
+    * can't live in the same 2MiB aligned region.
+    */
+   if (device->info.verx10 >= 125)
+       return 2 * 1024 * 1024;
+
    /* Gfx12 CCS surface addresses need to be 64K aligned. */
    if (device->info.ver >= 12 && (alloc_flags & ANV_BO_ALLOC_IMPLICIT_CCS))
       return 64 * 1024;
