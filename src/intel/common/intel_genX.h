@@ -41,6 +41,10 @@ extern "C" {
 UNUSED static int
 preferred_slm_allocation_size(const struct intel_device_info *devinfo)
 {
+   /* Wa_14010744585 */
+   if (intel_device_info_is_dg2(devinfo) && devinfo->revision == 0)
+      return SLM_ENCODES_128K;
+
    return 0;
 }
 
