@@ -1409,6 +1409,13 @@ emit_3dstate_te(struct anv_graphics_pipeline *pipeline)
                 geom_or_tess_prim_id_used(pipeline))
                te.TessellationDistributionMode = TEDMODE_OFF;
          }
+         if (intel_device_info_is_dg2(device->info) &&
+             (device->info->revision == 0)) {
+            /* Tessellation Distribution is enabled in B-stepping. See HSD:
+             * 1409785130
+             */
+            te.TessellationDistributionMode = TEDMODE_OFF;
+         }
 
          te.TessellationDistributionLevel = TEDLEVEL_PATCH;
          /* 64_TRIANGLES */
