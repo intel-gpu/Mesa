@@ -4995,6 +4995,13 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
       STATIC_ASSERT(TEDMODE_OFF == 0);
       if (intel_needs_workaround(devinfo, 14015055625)) {
          te.TessellationDistributionMode = TEDMODE_OFF;
+      } else if (intel_device_info_is_dg2(devinfo) &&
+                 (devinfo->revision < 4)) {
+         /* Wa_1409785130:
+          *
+          * Disable Tessellation Distribution before B0.
+          */
+         te.TessellationDistributionMode = TEDMODE_OFF;
       } else if (intel_needs_workaround(devinfo, 22012699309)) {
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
       } else {
@@ -6819,10 +6826,15 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             iris_emit_merge(batch, shader_psx, psx_state,
                             GENX(3DSTATE_PS_EXTRA_length));
          } else if (stage == MESA_SHADER_TESS_EVAL &&
+                    !(intel_device_info_is_dg2(batch->screen->devinfo) &&
+                      (batch->screen->devinfo->revision < 4)) &&
                     intel_needs_workaround(batch->screen->devinfo, 14015055625) &&
                     !program_needs_wa_14015055625) {
             /* This program doesn't require Wa_14015055625, so we can enable
              * a Tessellation Distribution Mode.
+             *
+             * Wa_1409785130 is also not required. (This WA requires disabling
+             * Tessellation Distribution on DG2 before B0.)
              */
 #if GFX_VERx10 >= 125
             uint32_t te_state[GENX(3DSTATE_TE_length)] = { 0 };
