@@ -256,6 +256,13 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
              geom_or_tess_prim_id_used(pipeline))
             te.TessellationDistributionMode = TEDMODE_OFF;
       }
+      if (intel_device_info_is_dg2(cmd_buffer->device->info) &&
+          (cmd_buffer->device->info->revision == 0)) {
+         /* Tessellation Distribution is enabled in B-stepping. See HSD:
+          * 1409785130
+          */
+         te.TessellationDistributionMode = TEDMODE_OFF;
+      }
 
       te.TessellationDistributionLevel = TEDLEVEL_PATCH;
       /* 64_TRIANGLES */
