@@ -4736,8 +4736,16 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
       if (intel_device_info_is_dg2(devinfo)) {
-         /* Wa_22012785325 */
-         te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+         if (devinfo->revision < 4) {
+            /* Wa_1409785130:
+             *
+             * Disable Tessellation Distribution before B0.
+             */
+            te.TessellationDistributionMode = TEDMODE_OFF;
+         } else {
+            /* Wa_22012785325 */
+            te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+         }
       } else {
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
       }
@@ -6410,6 +6418,19 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             uint32_t te_state[GENX(3DSTATE_TE_length)] = {0};
             _iris_pack_command(batch, GENX(3DSTATE_TE), te_state, te) {
 #if GFX_VERx10 >= 125
+               const struct intel_device_info *devinfo = &batch->screen->devinfo;
+               /* Wa_14015297576:
+                *
+                * Disable Tessellation Distribution when primitive Id is enabled.
+                *
+                * Wa_1409785130:
+                *
+                * Disable Tessellation Distribution before B0.
+                */
+               bool disable_tess_dist = includes_primitive_id ||
+                  (GFX_VERx10 >= 125 && intel_device_info_is_dg2(devinfo) &&
+                   devinfo->revision < 4);
+
                /* For Wa_22012785325, use TEDMODE_RR_STRICT instead of
                 * TEDMODE_RR_FREE.
                 *
@@ -6417,7 +6438,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
                 * distrubution off when primitive Id is enabled.
                 */
                te.TessellationDistributionMode =
-                  includes_primitive_id ? TEDMODE_OFF : TEDMODE_RR_STRICT;
+                  disable_tess_dist ? TEDMODE_OFF : TEDMODE_RR_STRICT;
 #endif
             }
 
