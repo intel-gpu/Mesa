@@ -170,6 +170,13 @@ init_render_queue_state(struct anv_queue *queue)
       ps.PipelineSelection = _3D;
    }
 
+#if GFX_VERx10 == 120
+   anv_batch_write_reg(&batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
+      c1.RCCRHWOOptimizationDisableBit = false;
+      c1.RCCRHWOOptimizationDisableBitMask = true;
+   };
+#endif
+
 #if GFX_VER == 9
    anv_batch_write_reg(&batch, GENX(CACHE_MODE_1), cm1) {
       cm1.FloatBlendOptimizationEnable = true;
