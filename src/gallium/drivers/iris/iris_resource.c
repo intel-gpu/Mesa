@@ -1073,6 +1073,10 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
       map_aux_addresses(screen, res, res->surf.format, 0);
    }
 
+   if (!res->bo->local && res->aux.usage == ISL_AUX_USAGE_GFX12_CCS_E &&
+       devinfo->has_local_mem)
+      iris_resource_disable_aux(res);
+
    if (templ->bind & PIPE_BIND_SHARED) {
       iris_bo_make_external(res->bo);
       res->base.is_shared = true;
@@ -1164,6 +1168,7 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
    assert(templ->target != PIPE_BUFFER);
 
    struct iris_screen *screen = (struct iris_screen *)pscreen;
+   struct intel_device_info *devinfo = &screen->devinfo;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
    struct iris_resource *res = iris_alloc_resource(pscreen, templ);
    if (!res)
@@ -1203,6 +1208,11 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
 
       UNUSED const bool ok = iris_resource_configure_aux(screen, res, true);
       assert(ok);
+
+      if (res->bo && !res->bo->local && devinfo->has_local_mem &&
+          res->aux.usage == ISL_AUX_USAGE_GFX12_CCS_E)
+         iris_resource_disable_aux(res);
+
       /* The gallium dri layer will create a separate plane resource for the
        * aux image. iris_resource_finish_aux_import will merge the separate aux
        * parameters back into a single iris_resource.
