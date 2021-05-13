@@ -1735,6 +1735,7 @@ anv_device_alloc_bo(struct anv_device *device,
          (alloc_flags & ANV_BO_ALLOC_CLIENT_VISIBLE_ADDRESS) != 0,
       .has_implicit_ccs = ccs_size > 0,
       .map_wc = alloc_flags & ANV_BO_ALLOC_WRITE_COMBINE,
+      .is_allocated_on_sys_mem = !alloc_local_mem,
    };
 
    if (alloc_flags & ANV_BO_ALLOC_MAPPED) {
