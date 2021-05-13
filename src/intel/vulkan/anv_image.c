@@ -1806,6 +1806,15 @@ VkResult anv_BindImageMemory2(
          if (bo && !bo->has_implicit_ccs &&
              device->physical->has_implicit_ccs)
             image->planes[p].aux_usage = ISL_AUX_USAGE_NONE;
+
+         /* On platforms that have local memory, we can support compression if
+          * the resource is allocated on local memory, otherwise if allocated
+          * on system memory, we have to turn off compression.
+          */
+         if (bo && bo->is_allocated_on_sys_mem &&
+             device->physical->vram.size > 0 &&
+             image->planes[p].aux_usage == ISL_AUX_USAGE_CCS_E)
+            image->planes[p].aux_usage = ISL_AUX_USAGE_NONE;
       }
    }
 

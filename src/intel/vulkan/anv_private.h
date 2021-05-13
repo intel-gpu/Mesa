@@ -539,6 +539,9 @@ struct anv_bo {
 
    /** True if this BO should be mapped with Write Combine enabled */
    bool map_wc:1;
+
+   /** True if this BO allocated in system memory */
+   bool is_allocated_on_sys_mem:1;
 };
 
 static inline struct anv_bo *
