@@ -4514,6 +4514,18 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
          if (slm_fence) {
             assert(opcode == SHADER_OPCODE_MEMORY_FENCE);
+            if (intel_device_info_is_dg2(devinfo)) {
+               /* Wa_14014063774
+                *
+                * If there are multiple SLM load SBID that are live, then the
+                * immeidate mask for sync.allwr should include all the
+                * corresponding SBID bits.
+                *
+                */
+               ubld.exec_all().group(1, 0).emit(
+                  BRW_OPCODE_SYNC, ubld.null_reg_ud(),
+                  brw_imm_ud(TGL_SYNC_ALLWR));
+            }
             fence_regs[fence_regs_count++] =
                emit_fence(ubld, opcode, GFX12_SFID_SLM, desc,
                           true /* commit_enable */,
