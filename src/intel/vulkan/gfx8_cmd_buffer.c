@@ -215,6 +215,7 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
    const struct vk_dynamic_graphics_state *dyn =
       &cmd_buffer->vk.dynamic_graphics_state;
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
+   UNUSED const struct intel_device_info *devinfo = pipeline->base.device->info;
    const struct brw_tes_prog_data *tes_prog_data = get_tes_prog_data(pipeline);
 
    if (!tes_prog_data ||
@@ -230,7 +231,12 @@ genX(cmd_emit_te)(struct anv_cmd_buffer *cmd_buffer)
       te.MaximumTessellationFactorOdd = 63.0;
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
-      te.TessellationDistributionMode = TEDMODE_RR_FREE;
+      if (intel_device_info_is_dg2(devinfo)) {
+         /* Wa_22012785325 */
+         te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+      } else {
+         te.TessellationDistributionMode = TEDMODE_RR_FREE;
+      }
       te.TessellationDistributionLevel = TEDLEVEL_PATCH;
       /* 64_TRIANGLES */
       te.SmallPatchThreshold = 3;
