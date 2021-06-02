@@ -189,7 +189,9 @@ get_l3_list(const struct intel_device_info *devinfo)
       return &icl_l3_list;
 
    case 12:
-      if (intel_device_info_is_dg2(devinfo))
+      if (intel_device_info_is_mtl(devinfo))
+         return &dg2_l3_list;
+      else if (intel_device_info_is_dg2(devinfo))
          return &dg2_l3_list;
       else if (devinfo->platform == INTEL_PLATFORM_DG1 || devinfo->verx10 == 125)
          return &empty_l3_list;
