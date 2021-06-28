@@ -362,6 +362,79 @@ anv_compute_sys_heap_size(struct anv_physical_device *device,
 }
 
 static VkResult MUST_CHECK
+anv_gather_meminfo_prelim(struct anv_physical_device *device, int fd, bool update)
+{
+   char sys_mem_regions[sizeof(struct prelim_drm_i915_query_memory_regions) +
+	                sizeof(struct prelim_drm_i915_memory_region_info)];
+
+   struct prelim_drm_i915_query_memory_regions *mem_regions =
+      intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_MEMORY_REGIONS, NULL);
+   if (mem_regions == NULL) {
+      if (device->info.has_local_mem) {
+         return VK_ERROR_INCOMPATIBLE_DRIVER;
+      }
+
+      uint64_t total_phys;
+      if (!os_get_total_physical_memory(&total_phys)) {
+         return VK_ERROR_INITIALIZATION_FAILED;
+      }
+
+      uint64_t available;
+      if (!os_get_available_system_memory(&available))
+         available = 0; /* Silently disable VK_EXT_memory_budget */
+
+      /* The kernel query failed.  Fake it using OS memory queries.  This
+       * should be roughly the same for integrated GPUs.
+       */
+      mem_regions = (void *)sys_mem_regions;
+      mem_regions->num_regions = 1;
+      mem_regions->regions[0] = (struct prelim_drm_i915_memory_region_info) {
+         .region.memory_class = I915_MEMORY_CLASS_SYSTEM,
+         .probed_size = total_phys,
+         .unallocated_size = available,
+      };
+   }
+
+   for(int i = 0; i < mem_regions->num_regions; i++) {
+      struct prelim_drm_i915_memory_region_info *info = &mem_regions->regions[i];
+
+      struct anv_memregion *region;
+      switch (info->region.memory_class) {
+      case I915_MEMORY_CLASS_SYSTEM:
+         region = &device->sys;
+         break;
+      case I915_MEMORY_CLASS_DEVICE:
+         region = &device->vram;
+         break;
+      default:
+         /* We don't know what kind of memory this is */
+         continue;
+      }
+
+      uint64_t size = info->probed_size;
+      if (info->region.memory_class == I915_MEMORY_CLASS_SYSTEM)
+         size = anv_compute_sys_heap_size(device, size);
+
+      uint64_t available = MIN2(size, info->unallocated_size);
+
+      if (update) {
+         assert(region->region.memory_class == info->region.memory_class);
+         assert(region->region.memory_instance == info->region.memory_instance);
+         assert(region->size == size);
+      } else {
+         region->region = info->region;
+         region->size = size;
+      }
+      region->available = available;
+   }
+
+   if (mem_regions != (void *)sys_mem_regions)
+      free(mem_regions);
+
+   return VK_SUCCESS;
+}
+
+static VkResult MUST_CHECK
 anv_gather_meminfo(struct anv_physical_device *device, int fd, bool update)
 {
    char sys_mem_regions[sizeof(struct drm_i915_query_memory_regions) +
@@ -372,13 +445,13 @@ anv_gather_meminfo(struct anv_physical_device *device, int fd, bool update)
    if (mem_regions == NULL) {
       if (device->info.has_local_mem) {
          return vk_errorf(device, VK_ERROR_INCOMPATIBLE_DRIVER,
-                          "failed to memory regions: %m");
+                           "failed to memory regions: %m");
       }
 
       uint64_t total_phys;
       if (!os_get_total_physical_memory(&total_phys)) {
          return vk_errorf(device, VK_ERROR_INITIALIZATION_FAILED,
-                          "failed to get total physical memory: %m");
+                           "failed to get total physical memory: %m");
       }
 
       uint64_t available;
@@ -439,12 +512,20 @@ anv_gather_meminfo(struct anv_physical_device *device, int fd, bool update)
 static VkResult MUST_CHECK
 anv_init_meminfo(struct anv_physical_device *device, int fd)
 {
+   if (anv_gather_meminfo_prelim(device, fd, false) == VK_SUCCESS) {
+      device->prelim_drm = true;
+      return VK_SUCCESS;
+   }
+
+   device->prelim_drm = false;
    return anv_gather_meminfo(device, fd, false);
 }
 
 static void
 anv_update_meminfo(struct anv_physical_device *device, int fd)
 {
+   if (anv_gather_meminfo_prelim(device, fd, true) == VK_SUCCESS)
+      return;
    ASSERTED VkResult result = anv_gather_meminfo(device, fd, true);
    assert(result == VK_SUCCESS);
 }
