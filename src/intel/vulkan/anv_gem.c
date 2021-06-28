@@ -64,11 +64,52 @@ anv_gem_close(struct anv_device *device, uint32_t gem_handle)
    intel_ioctl(device->fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
+static uint32_t
+anv_gem_create_regions_prelim(struct anv_device *device, uint64_t anv_bo_size,
+                              uint32_t num_regions,
+                              struct drm_i915_gem_memory_class_instance *regions)
+{
+   struct prelim_drm_i915_gem_object_param obj_param = {
+      .param = PRELIM_I915_PARAM_MEMORY_REGIONS | PRELIM_I915_OBJECT_PARAM,
+      .size = num_regions,
+      .data = (uintptr_t)regions,
+   };
+
+   struct prelim_drm_i915_gem_create_ext_setparam setparam_ext = {
+      .base = { .name = PRELIM_I915_GEM_CREATE_EXT_SETPARAM },
+      .param = obj_param,
+   };
+
+   struct prelim_drm_i915_gem_create_ext gem_create = {
+      .size = anv_bo_size,
+      .extensions = (uintptr_t) &setparam_ext,
+   };
+
+   int ret = intel_ioctl(device->fd, PRELIM_DRM_IOCTL_I915_GEM_CREATE_EXT,
+                         &gem_create);
+   if (ret != 0) {
+      return 0;
+   }
+
+   return gem_create.handle;
+}
+
 uint32_t
 anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
                        uint32_t flags, uint32_t num_regions,
                        struct drm_i915_gem_memory_class_instance *regions)
 {
+   if (device->info->prelim_drm) {
+      /* Check for invalid flags */
+      assert(flags == 0);
+
+      uint32_t bo_prelim = anv_gem_create_regions_prelim(device, anv_bo_size,
+                                                         num_regions, regions);
+      assert(bo_prelim);
+      if (bo_prelim)
+         return bo_prelim;
+   }
+
    /* Check for invalid flags */
    assert((flags & ~I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS) == 0);
 
@@ -109,6 +150,12 @@ anv_gem_mmap_offset(struct anv_device *device, uint32_t gem_handle,
 
    /* Get the fake offset back */
    int ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &gem_mmap);
+   if (ret != 0 && gem_mmap.flags == I915_MMAP_OFFSET_FIXED) {
+      gem_mmap.flags =
+         (flags & I915_MMAP_WC) ? I915_MMAP_OFFSET_WC : I915_MMAP_OFFSET_WB,
+      ret = intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &gem_mmap);
+   }
+
    if (ret != 0)
       return MAP_FAILED;
 
