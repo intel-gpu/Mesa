@@ -28,6 +28,7 @@
 #include "i915/anv_batch_chain.h"
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 #include "intel/common/i915/intel_gem.h"
 
 static int
@@ -40,6 +41,36 @@ i915_gem_set_caching(struct anv_device *device,
    };
 
    return intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_SET_CACHING, &gem_caching);
+}
+
+static uint32_t
+i915_prelim_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
+                               uint32_t num_regions,
+                               struct drm_i915_gem_memory_class_instance *regions)
+{
+   struct prelim_drm_i915_gem_object_param obj_param = {
+      .param = PRELIM_I915_PARAM_MEMORY_REGIONS | PRELIM_I915_OBJECT_PARAM,
+      .size = num_regions,
+      .data = (uintptr_t)regions,
+   };
+
+   struct prelim_drm_i915_gem_create_ext_setparam setparam_ext = {
+      .base = { .name = PRELIM_I915_GEM_CREATE_EXT_SETPARAM },
+      .param = obj_param,
+   };
+
+   struct prelim_drm_i915_gem_create_ext gem_create = {
+      .size = anv_bo_size,
+      .extensions = (uintptr_t) &setparam_ext,
+   };
+
+   int ret = intel_ioctl(device->fd, PRELIM_DRM_IOCTL_I915_GEM_CREATE_EXT,
+                         &gem_create);
+   if (ret != 0) {
+      return 0;
+   }
+
+   return gem_create.handle;
 }
 
 static uint32_t
@@ -93,6 +124,18 @@ i915_gem_create(struct anv_device *device,
        !(alloc_flags & ANV_BO_ALLOC_NO_LOCAL_MEM))
       if (device->physical->vram_non_mappable.size > 0)
          flags |= I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS;
+
+   if (device->info->prelim_drm) {
+      /* Check for invalid flags */
+      assert(flags == 0);
+
+      uint32_t bo_prelim =
+         i915_prelim_gem_create_regions(device, size, num_regions,
+                                        i915_regions);
+      assert(bo_prelim);
+      if (bo_prelim)
+         return bo_prelim;
+   }
 
    struct drm_i915_gem_create_ext_memory_regions ext_regions = {
       .num_regions = num_regions,
@@ -194,7 +237,7 @@ i915_gem_mmap_legacy(struct anv_device *device, struct anv_bo *bo, uint64_t offs
 static uint32_t
 mmap_calc_flags(struct anv_device *device, struct anv_bo *bo)
 {
-   if (device->info->has_local_mem)
+   if (device->info->has_local_mem && !device->info->prelim_drm)
       return I915_MMAP_OFFSET_FIXED;
 
    uint32_t flags;
