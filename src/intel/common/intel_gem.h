@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 
 #include <assert.h>
 #include <errno.h>
