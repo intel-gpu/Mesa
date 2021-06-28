@@ -67,6 +67,7 @@
 #include "string.h"
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 
 #ifdef HAVE_VALGRIND
 #include <valgrind.h>
@@ -240,6 +241,7 @@ struct iris_bufmgr {
    bool bo_reuse:1;
    bool use_global_vm:1;
    bool all_vram_mappable:1;
+   bool prelim_drm:1;
 
    struct intel_aux_map_context *aux_map_ctx;
 
@@ -1041,6 +1043,7 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
          .flags = 0,
       };
       if (flags & BO_ALLOC_PROTECTED) {
+         assert(!bufmgr->prelim_drm);
          intel_gem_add_ext(&create.extensions,
                            I915_GEM_CREATE_EXT_PROTECTED_CONTENT,
                            &protected_param.base);
@@ -1050,11 +1053,34 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
        * in the side of the branch where discrete memory is available. So we
        * can assume GEM_CREATE_EXT is supported already.
        */
-      if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &create) != 0) {
-         free(bo);
-         return NULL;
+      if (!bufmgr->prelim_drm) {
+         if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &create) != 0) {
+            free(bo);
+            return NULL;
+         }
+         bo->gem_handle = create.handle;
+      } else {
+         struct prelim_drm_i915_gem_object_param region_param = {
+            .size = ext_regions.num_regions,
+            .data = (uintptr_t)regions,
+            .param = PRELIM_I915_OBJECT_PARAM | PRELIM_I915_PARAM_MEMORY_REGIONS,
+         };
+         struct prelim_drm_i915_gem_create_ext_setparam setparam_region = {
+            .base = { .name = PRELIM_I915_GEM_CREATE_EXT_SETPARAM },
+            .param = region_param,
+         };
+         struct prelim_drm_i915_gem_create_ext create = {
+            .size = bo_size,
+            .extensions = (uintptr_t)&setparam_region,
+         };
+
+         if (intel_ioctl(bufmgr->fd, PRELIM_DRM_IOCTL_I915_GEM_CREATE_EXT,
+                         &create) != 0) {
+            free(bo);
+            return NULL;
+         }
+         bo->gem_handle = create.handle;
       }
-      bo->gem_handle = create.handle;
    } else {
       struct drm_i915_gem_create create = { .size = bo_size };
 
@@ -1655,6 +1681,13 @@ iris_bo_gem_mmap_offset(struct util_debug_callback *dbg, struct iris_bo *bo)
 
    /* Get the fake offset back */
    int ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &mmap_arg);
+   if (ret != 0 && mmap_arg.flags == I915_MMAP_OFFSET_FIXED) {
+      mmap_arg.flags =
+         bo->real.heap != IRIS_HEAP_SYSTEM_MEMORY ?
+         I915_MMAP_OFFSET_WC : I915_MMAP_OFFSET_WB;
+      ret = intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_MMAP_OFFSET, &mmap_arg);
+   }
+
    if (ret != 0) {
       DBG("%s:%d: Error preparing buffer %d (%s): %s .\n",
           __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
@@ -2393,6 +2426,7 @@ iris_bufmgr_get_meminfo(struct iris_bufmgr *bufmgr,
    bufmgr->vram.region.memory_instance = devinfo->mem.vram.mem_instance;
    bufmgr->vram.size = devinfo->mem.vram.mappable.size;
 
+   bufmgr->prelim_drm = devinfo->prelim_drm;
    return true;
 }
 
