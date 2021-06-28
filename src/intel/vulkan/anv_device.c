@@ -391,6 +391,8 @@ anv_init_meminfo(struct anv_physical_device *device, int fd)
    device->vram_non_mappable.size = devinfo->mem.vram.unmappable.size;
    device->vram_non_mappable.available = devinfo->mem.vram.unmappable.free;
 
+   device->prelim_drm = devinfo->prelim_drm;
+
    return VK_SUCCESS;
 }
 
