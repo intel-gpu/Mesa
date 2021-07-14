@@ -83,6 +83,9 @@ struct prelim_drm_i915_gem_context_create_ext_clone {
 	(((__u64)__I915_PMU_ENGINE(0xff, 0xff, 0xf) + 1 + (x)) | \
 	((__u64)(gt) << __PRELIM_I915_PMU_GT_SHIFT))
 
+#ifdef __I915_PMU_OTHER
+#undef __I915_PMU_OTHER
+#endif
 #define __I915_PMU_OTHER(x) ___PRELIM_I915_PMU_OTHER(0, x)
 
 #define __PRELIM_I915_PMU_ACTUAL_FREQUENCY(gt)		___PRELIM_I915_PMU_OTHER(gt, 0)
@@ -388,10 +391,11 @@ struct prelim_drm_i915_perf_open_param {
 #define PRELIM_I915_PERF_FLAG_FD_EU_STALL	(1 << 16)
 };
 
-struct prelim_drm_i915_gem_memory_class_instance {
-	__u16 memory_class; /* see enum prelim_drm_i915_gem_memory_class */
-	__u16 memory_instance;
-};
+//struct prelim_drm_i915_gem_memory_class_instance {
+//	__u16 memory_class; /* see enum prelim_drm_i915_gem_memory_class */
+//	__u16 memory_instance;
+//};
+#define prelim_drm_i915_gem_memory_class_instance drm_i915_gem_memory_class_instance
 
 struct prelim_drm_i915_query_item {
 #define PRELIM_DRM_I915_QUERY			(1 << 16)
