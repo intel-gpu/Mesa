@@ -406,6 +406,164 @@ linear_to_ytiled(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3,
 }
 
 /**
+ * Copy texture data from linear to Tile-4 layout.
+ *
+ * \copydoc tile_copy_fn
+ */
+static inline void
+linear_to_tile4(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3,
+                uint32_t y0, uint32_t y3,
+                char *dst, const char *src,
+                int32_t src_pitch,
+                uint32_t swizzle_bit,
+                isl_mem_copy_fn mem_copy,
+                isl_mem_copy_fn mem_copy_align16)
+{
+   /* Tile 4 consist of columns that are 'ytile_span' wide and each 64B tile block
+    * consists of 4 row of Y-tile ordered data.
+    * Each 512B block within a 4kB tile contains 8 such block.
+    * To calculate the tiled  offset, we need to identify:
+    * Block X and Block Y offset at each 512B block bounday in X and Y direction.
+    *
+    *   Block X - Adds 256B to offset when we encounter block boundary in
+    *             X direction.
+    *   Block Y - Adds 512B to offset when we encounter block boundary in
+    *             Y direction.
+    *
+    *   (x / ytile_span) * bytes_per_tile4blk //64B block position in X dir
+    *   x % ytile_span //Byte offset in X dir
+    *
+    *   (y % 4) * 16 // Y offset in Y direction
+    *   (y / 4) * 256// Y offset within 512B block after 1 row.
+    *
+    * The copy destination offset for each range copied is the sum of
+    * Block X offset 'BlkX_off', Block Y offset 'BlkY_off', X offset 'xo0' or 'xo'
+    * and a Y offset 'yo.'
+    */
+   const uint32_t column_width = ytile_span;
+   const uint32_t tile4_blkh = 4;
+   const uint32_t bytes_per_tile4blk = tile4_blkh * ytile_span;
+
+   uint32_t y1 = MIN2(y3, ALIGN_UP(y0, 4));
+   uint32_t y2 = MAX2(y1, ALIGN_DOWN(y3, 4));
+
+   uint32_t xo0 = (x0 % ytile_span) + (x0 / ytile_span) * bytes_per_tile4blk;
+   uint32_t xo1 = (x1 % ytile_span) + (x1 / ytile_span) * bytes_per_tile4blk;
+
+   uint32_t Blkxo0_off = (xo0 / 256) * 256;
+   uint32_t Blky0_off = (y0 / 8) * 512;
+
+   uint32_t BlkX_off, BlkY_off;
+
+   uint32_t x, yo, Y0, Y2;
+
+   /* Y0 determines the initial byte offset in the Y direction */
+   Y0 = (y0/4) * 256 + (y0 % 4) * 16;
+
+   /* Y2 determines the byte offset required for reaching y2 if y2 doesn't map
+    * exactly to 512B block boundary
+    */
+   Y2 = y2 * 4 * column_width;
+
+   src += (ptrdiff_t)y0 * src_pitch;
+
+   if (y0 != y1) {
+      for (yo = Y0; yo < Y0 + (y1 - y0) * column_width; yo += column_width) {
+         uint32_t xo = xo1;
+
+         if (x0 != x1)
+            mem_copy(dst + (Blky0_off + Blkxo0_off) + (xo0 + yo), src + x0, x1 - x0);
+
+         for (x = x1; x < x2; x += ytile_span) {
+            BlkX_off = (xo / 256) * 256;
+
+            mem_copy_align16(dst + (Blky0_off + BlkX_off) + (xo + yo), src + x, ytile_span);
+            xo += bytes_per_tile4blk;
+         }
+
+         if (x3 != x2) {
+            BlkX_off = (xo / 256) * 256;
+            mem_copy_align16(dst + (Blky0_off + BlkX_off) + (xo + yo), src + x2, x3 - x2);
+         }
+
+         src += src_pitch;
+      }
+   }
+
+   for (yo = y1 * 4 * column_width; yo < y2 * 4 * column_width; yo += 16 * column_width) {
+      uint32_t xo = xo1;
+      BlkY_off = (yo / 512) * 512;
+
+      if (x0 != x1) {
+         mem_copy(dst + (BlkY_off + Blkxo0_off) + (xo0 + yo + 0 * column_width),
+                  src + x0 + 0 * src_pitch, x1 - x0);
+         mem_copy(dst + (BlkY_off + Blkxo0_off) + (xo0 + yo + 1 * column_width),
+                  src + x0 + 1 * src_pitch, x1 - x0);
+         mem_copy(dst + (BlkY_off + Blkxo0_off) + (xo0 + yo + 2 * column_width),
+                  src + x0 + 2 * src_pitch, x1 - x0);
+         mem_copy(dst + (BlkY_off + Blkxo0_off) + (xo0 + yo + 3 * column_width),
+                  src + x0 + 3 * src_pitch, x1 - x0);
+      }
+
+      for (x = x1; x < x2; x += ytile_span) {
+         BlkX_off = (xo / 256) * 256;
+
+         mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo+ 0 * column_width),
+                          src + x + 0 * src_pitch, ytile_span);
+         mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo + 1 * column_width),
+                          src + x + 1 * src_pitch, ytile_span);
+         mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo + 2 * column_width),
+                          src + x + 2 * src_pitch, ytile_span);
+         mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo + 3 * column_width),
+                          src + x + 3 * src_pitch, ytile_span);
+
+         xo += bytes_per_tile4blk;
+      }
+
+      if (x2 != x3) {
+         BlkX_off = (xo / 256) * 256;
+
+         mem_copy(dst + (BlkY_off + BlkX_off) + (xo + yo + 0 * column_width),
+                  src + x2 + 0 * src_pitch, x3 - x2);
+         mem_copy(dst + (BlkY_off + BlkX_off) + (xo + yo + 1 * column_width),
+                  src + x2 + 1 * src_pitch, x3 - x2);
+         mem_copy(dst + (BlkY_off + BlkX_off) + (xo + yo + 2 * column_width),
+                  src + x2 + 2 * src_pitch, x3 - x2);
+         mem_copy(dst + (BlkY_off + BlkX_off) + (xo + yo + 3 * column_width),
+                  src + x2 + 3 * src_pitch, x3 - x2);
+      }
+
+      src += 4 * src_pitch;
+
+   }
+
+   if (y2 != y3) {
+      for (yo = Y2; yo < Y2 + (y3 - y2) * column_width; yo += column_width) {
+         uint32_t xo = xo1;
+         BlkY_off = (yo / 512) * 512;
+
+         if (x0 != x1)
+            mem_copy(dst + (BlkY_off + Blkxo0_off) + (xo0 + yo), src + x0, x1 - x0);
+
+         for (x = x1; x < x2; x += ytile_span) {
+            BlkX_off = (xo / 256) * 256;
+
+            mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo), src + x, ytile_span);
+            xo += bytes_per_tile4blk;
+         }
+
+         if (x3 != x2) {
+            BlkX_off = (xo / 256) * 256;
+            mem_copy_align16(dst + (BlkY_off + BlkX_off) + (xo + yo), src + x2, x3 - x2);
+         }
+
+         src += src_pitch;
+      }
+   }
+
+}
+
+/**
  * Copy texture data from X tile layout to linear.
  *
  * \copydoc tile_copy_fn
@@ -705,6 +863,48 @@ linear_to_ytiled_faster(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3,
 }
 
 /**
+ * Copy texture data from linear to tile 4 layout, faster.
+ *
+ * Same as \ref linear_to_tile4 but faster, because it passes constant
+ * parameters for common cases, allowing the compiler to inline code
+ * optimized for those cases.
+ *
+ * \copydoc tile_copy_fn
+ */
+static FLATTEN void
+linear_to_tile4_faster(uint32_t x0, uint32_t x1, uint32_t x2, uint32_t x3,
+                        uint32_t y0, uint32_t y1,
+                        char *dst, const char *src,
+                        int32_t src_pitch,
+                        uint32_t swizzle_bit,
+                        isl_memcpy_type copy_type)
+{
+   isl_mem_copy_fn mem_copy = choose_copy_function(copy_type);
+
+   if (x0 == 0 && x3 == ytile_width && y0 == 0 && y1 == ytile_height) {
+      if (mem_copy == memcpy)
+         return linear_to_tile4(0, 0, ytile_width, ytile_width, 0, ytile_height,
+                                 dst, src, src_pitch, swizzle_bit, memcpy, memcpy);
+      else if (mem_copy == rgba8_copy)
+         return linear_to_tile4(0, 0, ytile_width, ytile_width, 0, ytile_height,
+                                 dst, src, src_pitch, swizzle_bit,
+                                 rgba8_copy, rgba8_copy_aligned_dst);
+      else
+         unreachable("not reached");
+   } else {
+      if (mem_copy == memcpy)
+         return linear_to_tile4(x0, x1, x2, x3, y0, y1,
+                                 dst, src, src_pitch, swizzle_bit, memcpy, memcpy);
+      else if (mem_copy == rgba8_copy)
+         return linear_to_tile4(x0, x1, x2, x3, y0, y1,
+                                 dst, src, src_pitch, swizzle_bit,
+                                 rgba8_copy, rgba8_copy_aligned_dst);
+      else
+         unreachable("not reached");
+   }
+}
+
+/**
  * Copy texture data from X tile layout to linear, faster.
  *
  * Same as \ref xtile_to_linear but faster, because it passes constant
@@ -853,6 +1053,11 @@ linear_to_tiled(uint32_t xt1, uint32_t xt2,
       th = ytile_height;
       span = ytile_span;
       tile_copy = linear_to_ytiled_faster;
+   } else if (tiling == ISL_TILING_4) {
+      tw = ytile_width;
+      th = ytile_height;
+      span = ytile_span;
+      tile_copy = linear_to_tile4_faster;
    } else {
       unreachable("unsupported tiling");
    }
