@@ -1592,6 +1592,24 @@ emit_3dstate_vs(struct anv_graphics_pipeline *pipeline)
    }
 }
 
+static UNUSED bool
+geom_or_tess_prim_id_used(struct anv_graphics_pipeline *pipeline)
+{
+   const struct brw_tcs_prog_data *tcs_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
+      get_tcs_prog_data(pipeline) : NULL;
+   const struct brw_tes_prog_data *tes_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ?
+      get_tes_prog_data(pipeline) : NULL;
+   const struct brw_gs_prog_data *gs_prog_data =
+      anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY) ?
+      get_gs_prog_data(pipeline) : NULL;
+
+   return (tcs_prog_data ? tcs_prog_data->include_primitive_id : false) ||
+          (tes_prog_data ? tes_prog_data->include_primitive_id : false) ||
+          (gs_prog_data ? gs_prog_data->include_primitive_id : false);
+}
+
 static void
 emit_3dstate_hs_te_ds(struct anv_graphics_pipeline *pipeline,
                       const struct vk_tessellation_state *ts)
@@ -1689,6 +1707,12 @@ emit_3dstate_hs_te_ds(struct anv_graphics_pipeline *pipeline,
       if (intel_device_info_is_dg2(devinfo)) {
          /* Wa_22012785325 */
          te.TessellationDistributionMode = TEDMODE_RR_STRICT;
+         /* Wa_14015297576:
+          *
+          * Disable Tessellation Distribution when primitive Id is enabled.
+          */
+         if (geom_or_tess_prim_id_used(pipeline))
+            te.TessellationDistributionMode = TEDMODE_OFF;
       } else {
          te.TessellationDistributionMode = TEDMODE_RR_FREE;
       }
