@@ -39,6 +39,7 @@
 #include "util/macros.h"
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 
 static const struct {
    const char *name;
@@ -1569,10 +1570,15 @@ query_topology(struct intel_device_info *devinfo, int fd)
 
    if (devinfo->verx10 >= 125) {
       struct drm_i915_query_topology_info *geom_topo_info =
-         intel_i915_query_alloc(fd, DRM_I915_QUERY_GEOMETRY_SUBSLICES, NULL);
+         intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_GEOMETRY_SLICES,
+                                NULL);
       if (geom_topo_info == NULL) {
-         free(topo_info);
-         return false;
+         geom_topo_info =
+            intel_i915_query_alloc(fd, DRM_I915_QUERY_GEOMETRY_SUBSLICES, NULL);
+         if (geom_topo_info == NULL) {
+            free(topo_info);
+            return false;
+         }
       }
 
       update_from_single_slice_topology(devinfo, topo_info, geom_topo_info);
