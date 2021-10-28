@@ -167,6 +167,17 @@ static const struct intel_l3_config dg2_l3_configs[] = {
 DECLARE_L3_LIST(dg2);
 
 /**
+ * MTL-P' validated L3 configurations. \sa mtl_p1_l3_configs.
+ */
+static const struct intel_l3_config mtl_p1_l3_configs[] = {
+   /* SLM URB ALL   DC   RO  IS   C   T   TC */
+   {{  0,  0,  64,   0,   0,  0,  0,  0,  0  }},
+   {{  0,  0,  48,   0,   0,  0,  0,  0,  16 }},
+   {{  0,  0,  32,   0,   0,  0,  0,  0,  32 }},
+};
+DECLARE_L3_LIST(mtl_p1);
+
+/**
  * Return a zero-terminated array of validated L3 configurations for the
  * specified device.
  */
@@ -189,9 +200,12 @@ get_l3_list(const struct intel_device_info *devinfo)
       return &icl_l3_list;
 
    case 12:
-      if (intel_device_info_is_mtl(devinfo))
-         return &dg2_l3_list;
-      else if (intel_device_info_is_dg2(devinfo))
+      if (intel_device_info_is_mtl(devinfo)) {
+         if (devinfo->platform == INTEL_PLATFORM_MTL_P)
+            return &mtl_p1_l3_list;
+         else
+            return &dg2_l3_list;
+      } else if (intel_device_info_is_dg2(devinfo))
          return &dg2_l3_list;
       else if (devinfo->platform == INTEL_PLATFORM_DG1 || devinfo->verx10 == 125)
          return &empty_l3_list;
@@ -345,7 +359,7 @@ get_l3_way_size(const struct intel_device_info *devinfo)
 {
    const unsigned way_size_per_bank =
       (devinfo->ver >= 9 && devinfo->l3_banks == 1) || devinfo->ver >= 11 ?
-      4 : 2;
+      4 /* XXX - MTL-N/S/M have 8k way size, but no way to identify them here */ : 2;
 
    assert(devinfo->l3_banks);
    return way_size_per_bank * devinfo->l3_banks;
