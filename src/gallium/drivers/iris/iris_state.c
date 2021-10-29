@@ -5876,6 +5876,37 @@ genX(emit_depth_state_workarounds)(struct iris_context *ice,
 }
 
 static void
+shader_includes_primitive_id(struct iris_context *ice,
+                             struct iris_batch *batch,
+                             const struct brw_stage_prog_data *prog_data,
+                             gl_shader_stage stage,
+                             bool *includes_primitive_id)
+{
+   switch (stage) {
+   case MESA_SHADER_TESS_CTRL: {
+      struct brw_tcs_prog_data *tcs_prog_data = (void *) prog_data;
+      *includes_primitive_id |= tcs_prog_data->include_primitive_id;
+      break;
+   }
+   case MESA_SHADER_TESS_EVAL: {
+      struct brw_tes_prog_data *tes_prog_data = (void *) prog_data;
+      *includes_primitive_id |= tes_prog_data->include_primitive_id;
+      break;
+   }
+   default:
+      break;
+   }
+
+   struct iris_compiled_shader *gs_shader =
+      ice->shaders.prog[MESA_SHADER_GEOMETRY];
+   const struct brw_gs_prog_data *gs_prog_data =
+      gs_shader ? (void *) gs_shader->prog_data : NULL;
+
+   *includes_primitive_id |=
+      gs_prog_data ? gs_prog_data->include_primitive_id : false;
+}
+
+static void
 iris_upload_dirty_render_state(struct iris_context *ice,
                                struct iris_batch *batch,
                                const struct pipe_draw_info *draw)
@@ -6209,6 +6240,8 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
    }
 
+   bool includes_primitive_id = false;
+
    for (int stage = 0; stage <= MESA_SHADER_FRAGMENT; stage++) {
       if (!(stage_dirty & (IRIS_STAGE_DIRTY_VS << stage)))
          continue;
@@ -6222,6 +6255,8 @@ iris_upload_dirty_render_state(struct iris_context *ice,
 
          uint32_t scratch_addr =
             pin_scratch_space(ice, batch, prog_data, stage);
+         shader_includes_primitive_id(ice, batch, prog_data, stage,
+                                      &includes_primitive_id);
 
          if (stage == MESA_SHADER_FRAGMENT) {
             UNUSED struct iris_rasterizer_state *cso = ice->state.cso_rast;
@@ -6301,6 +6336,28 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             case MESA_SHADER_TESS_EVAL: MERGE_SCRATCH_ADDR(3DSTATE_DS); break;
             case MESA_SHADER_GEOMETRY:  MERGE_SCRATCH_ADDR(3DSTATE_GS); break;
             }
+         } else if (stage == MESA_SHADER_TESS_EVAL) {
+            uint32_t te_state[GENX(3DSTATE_TE_length)] = {0};
+            _iris_pack_command(batch, GENX(3DSTATE_TE), te_state, te) {
+#if GFX_VERx10 >= 125
+               /* For Wa_22012785325, use TEDMODE_RR_STRICT instead of
+                * TEDMODE_RR_FREE.
+                *
+                * For Wa_14015297576, we need to force tessellation
+                * distrubution off when primitive Id is enabled.
+                */
+               te.TessellationDistributionMode =
+                  includes_primitive_id ? TEDMODE_OFF : TEDMODE_RR_STRICT;
+#endif
+            }
+
+            uint32_t *ds_state = (uint32_t *) shader->derived_data;
+            uint32_t *shader_te = ds_state + GENX(3DSTATE_DS_length);
+
+            iris_batch_emit(batch, shader->derived_data,
+                            sizeof(uint32_t) * GENX(3DSTATE_DS_length));
+            iris_emit_merge(batch, shader_te, te_state,
+                            GENX(3DSTATE_TE_length));
          } else {
             iris_batch_emit(batch, shader->derived_data,
                             iris_derived_program_state_size(stage));
