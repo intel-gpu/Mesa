@@ -172,4 +172,18 @@ if with_tests
     suite : ['intel'],
     protocol : gtest_test_protocol,
   )
+  test(
+    'isl_tilememcpy',
+    executable(
+      'isl_tilememcpy_test',
+      [
+        'tests/isl_tilememcpy_tiled_unittest.cpp',
+      ],
+      dependencies : [dep_m, idep_gtest, idep_mesautil],
+      include_directories : [inc_include, inc_src, inc_gallium, inc_intel],
+      link_with : [libisl, libintel_dev],
+      cpp_args : ['-std=c++17'],
+    ),
+    suite : ['intel'],
+  )
 endif
