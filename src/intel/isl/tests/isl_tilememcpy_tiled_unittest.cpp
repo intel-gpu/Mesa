@@ -78,6 +78,16 @@ public:
                                    uint32_t y_px);
 };
 
+class tile4Fixture : public tileTFixture,
+                     public ::testing::WithParamInterface<std::tuple<int, int,
+                                                                     int, int>>
+{
+
+public:
+   uint8_t *linear_to_tile_swizzle(const uint8_t *base_addr, uint32_t x_B,
+                                   uint32_t y_px);
+};
+
 void tileTFixture::SetUp(uint32_t tw, uint32_t th,
                          TILE_CONV convert, enum isl_tiling format)
 {
@@ -165,6 +175,26 @@ uint8_t *tileYFixture::linear_to_tile_swizzle(const uint8_t *base_addr, uint32_t
    return (uint8_t *)(base_addr + tiled_off);
 }
 
+uint8_t *tile4Fixture::linear_to_tile_swizzle(const uint8_t * base_addr, uint32_t x_B,
+                                               uint32_t y_px)
+{
+   /* The table below represents the mapping from coordinate (x_B, y_px) to
+    * byte offset in a 128x32px 1Bpp image:
+    *
+    *    Bit ind : 11 10  9  8  7  6  5  4  3  2  1  0
+    *     Tile-Y : v4 v3 u6 v2 u5 u4 v1 v0 u3 u2 u1 u0
+    */
+   uint32_t tiled_off;
+
+   tiled_off = swizzle_bitops(x_B, 4, 0, 0) |
+               swizzle_bitops(y_px, 2, 0, 4) |
+               swizzle_bitops(x_B, 2, 4, 6) |
+               swizzle_bitops(y_px, 1, 2, 8) |
+               swizzle_bitops(x_B, 1, 6, 9) | swizzle_bitops(y_px, 2, 3, 10);
+
+   return (uint8_t *) (base_addr + tiled_off);
+}
+
 void tileTFixture::convert_texture(uint8_t x1, uint8_t x2, uint8_t y1, uint8_t y2)
 {
 
@@ -233,4 +263,25 @@ TEST_P(tileYFixture, tiletolin)
     compare_conv_result(x1, x2, y1, y2);
 }
 
+TEST_P(tile4Fixture, lintotile)
+{
+    auto [x1, x2, y1, y2] = GetParam();
+    std::cout << std::dec << x1 << " " << x2 << " " << y1 << " " << y2 << " " << std::endl;
+    SetUp(128, 32, LIN_TO_TILE, ISL_TILING_4);
+    bounded_byte_fill(x1, x2, y1, y2);
+    convert_texture(x1, x2, y1, y2);
+    compare_conv_result(x1, x2, y1, y2);
+}
+
+TEST_P(tile4Fixture, tiletolin)
+{
+    auto [x1, x2, y1, y2] = GetParam();
+    std::cout << std::dec << x1 << " " << x2 << " " << y1 << " " << y2 << " " << std::endl;
+    SetUp(128, 32, TILE_TO_LIN, ISL_TILING_4);
+    bounded_byte_fill(x1, x2, y1, y2);
+    convert_texture(x1, x2, y1, y2);
+    compare_conv_result(x1, x2, y1, y2);
+}
+
 INSTANTIATE_TEST_CASE_P(Ytile, tileYFixture, testing::Values(LIN_TO_TILE_COORD));
+INSTANTIATE_TEST_CASE_P(tile4, tile4Fixture, testing::Values(LIN_TO_TILE_COORD));
