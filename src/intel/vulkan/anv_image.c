@@ -368,6 +368,54 @@ anv_image_plane_needs_shadow_surface(const struct intel_device_info *devinfo,
    return false;
 }
 
+static bool
+anv_isl_format_supports_atomics(enum isl_format format)
+{
+   switch (format) {
+   case ISL_FORMAT_R32_UINT:
+   case ISL_FORMAT_R32_SINT:
+   case ISL_FORMAT_R32_FLOAT:
+      return true;
+   default:
+      return false;
+   }
+}
+
+/* The only format which supports atomics are R32_UINT, R32_SINT and
+ * R32_FLOAT, If image created with these formats or if MUTABLE_FORMAT_BIT is
+ * set, they can make R32_[SU]INT or R32_FLOAT view of any image with 32 bit
+ * format.
+ */
+static bool
+storage_image_format_supports_atomic(const struct intel_device_info *devinfo,
+                                     VkImageCreateFlags create_flags,
+                                     enum isl_format format,
+                                     VkImageTiling vk_tiling,
+                                     const VkImageFormatListCreateInfoKHR *fmt_list)
+{
+   if (anv_isl_format_supports_atomics(format))
+      return true;
+
+   if (!(create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+      return false;
+
+   if (fmt_list) {
+      for (uint32_t i = 0; i < fmt_list->viewFormatCount; i++) {
+         enum isl_format view_format =
+            anv_get_isl_format(devinfo, fmt_list->pViewFormats[i],
+                               VK_IMAGE_ASPECT_COLOR_BIT, vk_tiling);
+
+         if (anv_isl_format_supports_atomics(view_format))
+            return true;
+      }
+
+      return false;
+   }
+
+    /* No explicit format list. Any 32-bit format could be used for atomics */
+   return isl_format_get_layout(format)->bpb == 32;
+}
+
 static enum isl_format
 anv_get_isl_format_with_usage(const struct intel_device_info *devinfo,
                               VkFormat vk_format,
@@ -449,6 +497,13 @@ anv_formats_ccs_e_compatible(const struct intel_device_info *devinfo,
 
       if (!formats_ccs_e_compatible(devinfo, create_flags, format, vk_tiling,
                                     VK_IMAGE_USAGE_STORAGE_BIT, fmt_list))
+         return false;
+
+      /* Disable compression when surface can be potentially used for atomic
+       * operation.
+       */
+      if (storage_image_format_supports_atomic(devinfo, create_flags, format,
+                                               vk_tiling, fmt_list))
          return false;
    }
 
