@@ -591,9 +591,27 @@ fixup_chv_device_info(struct intel_device_info *devinfo)
 }
 
 void *
-intel_device_info_i915_query_hwconfig(int fd, int32_t *len)
+intel_device_info_i915_query_hwconfig(int fd, int32_t *ret_len)
 {
-   return intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB, len);
+   void *hwconfig_blob;
+   int32_t len;
+
+   hwconfig_blob =
+      intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE, &len);
+   if (!hwconfig_blob) {
+      hwconfig_blob = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+                                             &len);
+      if (hwconfig_blob != NULL && len < 128) {
+         /* HACK: This seems too small. Maybe it's the wrong query item since
+          * i915 upstream does not support hwconfig yet. Let's ignore it.
+          */
+         free(hwconfig_blob);
+         hwconfig_blob = NULL;
+      }
+   }
+
+   *ret_len = len;
+   return hwconfig_blob;
 }
 
 bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *devinfo)
