@@ -26,6 +26,7 @@
 #include <stdlib.h>
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 #include "intel_device_info.h"
 #include "intel_hwconfig.h"
 #include "intel_hwconfig_types.h"
@@ -314,14 +315,18 @@ intel_get_and_process_hwconfig_table(int fd,
    int32_t hwconfig_len = 0;
    bool result = true;
 
-   hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+   hwconfig = intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE,
                                      &hwconfig_len);
-   if (hwconfig != NULL && hwconfig_len < 128) {
-      /* HACK: This seems too small. Maybe it's the wrong query item since
-       * i915 upstream does not support hwconfig yet. Let's ignore it.
-       */
-      free(hwconfig);
-      hwconfig = NULL;
+   if (!hwconfig) {
+      hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+                                        &hwconfig_len);
+      if (hwconfig != NULL && hwconfig_len < 128) {
+         /* HACK: This seems too small. Maybe it's the wrong query item since
+          * i915 upstream does not support hwconfig yet. Let's ignore it.
+          */
+         free(hwconfig);
+         hwconfig = NULL;
+      }
    }
    if (hwconfig) {
       result = intel_apply_hwconfig_table(devinfo, hwconfig, hwconfig_len);
@@ -357,14 +362,18 @@ intel_get_and_print_hwconfig_table(int fd)
    int32_t hwconfig_len = 0;
    bool result = true;
 
-   hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+   hwconfig = intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE,
                                      &hwconfig_len);
-   if (hwconfig != NULL && hwconfig_len < 128) {
-      /* HACK: This seems too small. Maybe it's the wrong query item since
-       * i915 upstream does not support hwconfig yet. Let's ignore it.
-       */
-      free(hwconfig);
-      hwconfig = NULL;
+   if (!hwconfig) {
+      hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+                                        &hwconfig_len);
+      if (hwconfig != NULL && hwconfig_len < 128) {
+         /* HACK: This seems too small. Maybe it's the wrong query item since
+          * i915 upstream does not support hwconfig yet. Let's ignore it.
+          */
+         free(hwconfig);
+         hwconfig = NULL;
+      }
    }
    if (hwconfig) {
       result = intel_print_hwconfig_table(hwconfig, hwconfig_len);
