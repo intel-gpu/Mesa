@@ -599,13 +599,18 @@ bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *d
    void *hwconfig_blob;
    int32_t len;
 
-   hwconfig_blob = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB, &len);
-   if (hwconfig_blob != NULL && len < 128) {
-      /* HACK: This seems too small. Maybe it's the wrong query item since
-       * i915 upstream does not support hwconfig yet. Let's ignore it.
-       */
-      free(hwconfig_blob);
-      hwconfig_blob = NULL;
+   hwconfig_blob =
+      intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_HWCONFIG_TABLE, &len);
+   if (!hwconfig_blob) {
+      hwconfig_blob = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
+                                             &len);
+      if (hwconfig_blob != NULL && len < 128) {
+         /* HACK: This seems too small. Maybe it's the wrong query item since
+          * i915 upstream does not support hwconfig yet. Let's ignore it.
+          */
+         free(hwconfig_blob);
+         hwconfig_blob = NULL;
+      }
    }
    if (hwconfig_blob) {
       if (intel_hwconfig_process_table(devinfo, hwconfig_blob, len))
