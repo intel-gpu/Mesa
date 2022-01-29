@@ -316,6 +316,13 @@ intel_get_and_process_hwconfig_table(int fd,
 
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
+   if (hwconfig != NULL && hwconfig_len < 128) {
+      /* HACK: This seems too small. Maybe it's the wrong query item since
+       * i915 upstream does not support hwconfig yet. Let's ignore it.
+       */
+      free(hwconfig);
+      hwconfig = NULL;
+   }
    if (hwconfig) {
       result = intel_apply_hwconfig_table(devinfo, hwconfig, hwconfig_len);
       free(hwconfig);
@@ -352,6 +359,13 @@ intel_get_and_print_hwconfig_table(int fd)
 
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
+   if (hwconfig != NULL && hwconfig_len < 128) {
+      /* HACK: This seems too small. Maybe it's the wrong query item since
+       * i915 upstream does not support hwconfig yet. Let's ignore it.
+       */
+      free(hwconfig);
+      hwconfig = NULL;
+   }
    if (hwconfig) {
       result = intel_print_hwconfig_table(hwconfig, hwconfig_len);
       free(hwconfig);
