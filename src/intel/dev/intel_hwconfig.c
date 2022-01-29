@@ -334,6 +334,13 @@ intel_get_and_print_hwconfig_table(int fd, struct intel_device_info *devinfo)
       break;
    }
 
+   if (hwconfig != NULL && hwconfig_len < 128) {
+      /* HACK: This seems too small. Maybe it's the wrong query item since
+       * i915 upstream does not support hwconfig yet. Let's ignore it.
+       */
+      free(hwconfig);
+      hwconfig = NULL;
+   }
    if (hwconfig) {
       result = intel_print_hwconfig_table(hwconfig, hwconfig_len);
       free(hwconfig);
