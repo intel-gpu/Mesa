@@ -30,6 +30,7 @@
 #include "util/bitscan.h"
 #include "util/macros.h"
 #include "util/format/u_format.h"
+#include "util/u_debug.h"
 
 #include "iris_resource.h"
 #include "iris_screen.h"
@@ -220,6 +221,9 @@ iris_is_format_supported(struct pipe_screen *pscreen,
    if (devinfo->ver == 9 && (format == ISL_FORMAT_ASTC_LDR_2D_5X5_FLT16 ||
                              format == ISL_FORMAT_ASTC_LDR_2D_5X5_U8SRGB))
       return false;
+
+   if (isl_format_get_layout(format)->txc == ISL_TXC_ASTC && supported)
+      return !debug_get_bool_option("INTEL_FORCE_ASTC_FALLBACK", false);
 
    return supported;
 }
