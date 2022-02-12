@@ -239,6 +239,7 @@ struct iris_bufmgr {
    bool has_userptr_probe:1;
    bool bo_reuse:1;
    bool use_global_vm:1;
+   bool prelim_drm:1;
 
    struct intel_aux_map_context *aux_map_ctx;
 
@@ -986,42 +987,53 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
          unreachable("invalid heap for BO");
       }
 
-      struct prelim_drm_i915_gem_object_param region_param = {
-         .size = nregions,
-         .data = (uintptr_t)regions,
-         .param = PRELIM_I915_OBJECT_PARAM | PRELIM_I915_PARAM_MEMORY_REGIONS,
-      };
+      if (bufmgr->prelim_drm) {
+         struct prelim_drm_i915_gem_object_param region_param = {
+            .size = nregions,
+            .data = (uintptr_t)regions,
+            .param = PRELIM_I915_OBJECT_PARAM | PRELIM_I915_PARAM_MEMORY_REGIONS,
+         };
 
-      struct prelim_drm_i915_gem_create_ext_setparam setparam_region = {
-         .base = { .name = PRELIM_I915_GEM_CREATE_EXT_SETPARAM },
-         .param = region_param,
-      };
+         struct prelim_drm_i915_gem_create_ext_setparam setparam_region = {
+            .base = { .name = PRELIM_I915_GEM_CREATE_EXT_SETPARAM },
+            .param = region_param,
+         };
 
-      struct prelim_drm_i915_gem_create_ext create = {
-         .size = bo_size,
-         .extensions = (uintptr_t)&setparam_region,
-      };
+         struct prelim_drm_i915_gem_create_ext create = {
+            .size = bo_size,
+            .extensions = (uintptr_t)&setparam_region,
+         };
 
-      /* It should be safe to use GEM_CREATE_EXT without checking, since we are
-       * in the side of the branch where discrete memory is available. So we
-       * can assume GEM_CREATE_EXT is supported already.
-       */
-      if (intel_ioctl(bufmgr->fd, PRELIM_DRM_IOCTL_I915_GEM_CREATE_EXT,
-                      &create) != 0) {
+         if (intel_ioctl(bufmgr->fd, PRELIM_DRM_IOCTL_I915_GEM_CREATE_EXT,
+                         &create) != 0) {
+            free(bo);
+            return NULL;
+         }
+
+         bo->gem_handle = create.handle;
+      } else {
+         /* It should be safe to use GEM_CREATE_EXT without checking, since we
+          * are in the side of the branch where discrete memory is available.
+          * So we can assume GEM_CREATE_EXT is supported already.
+          */
          struct drm_i915_gem_create_ext_memory_regions ext_regions = {
             .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },
             .num_regions = nregions,
             .regions = (uintptr_t)regions,
          };
 
-         create.extensions = (uintptr_t)&ext_regions;
+         struct drm_i915_gem_create_ext create = {
+            .size = bo_size,
+            .extensions = (uintptr_t)&ext_regions,
+         };
 
          if (intel_ioctl(bufmgr->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &create) != 0) {
             free(bo);
             return NULL;
          }
+
+         bo->gem_handle = create.handle;
       }
-      bo->gem_handle = create.handle;
    } else {
       struct drm_i915_gem_create create = { .size = bo_size };
 
@@ -2376,6 +2388,8 @@ iris_bufmgr_query_meminfo_prelim(struct iris_bufmgr *bufmgr)
          break;
       }
    }
+
+   bufmgr->prelim_drm = true;
 
    free(meminfo);
    return true;
