@@ -99,10 +99,13 @@ anv_gem_create_regions(struct anv_device *device, uint64_t anv_bo_size,
                        uint32_t num_regions,
                        struct drm_i915_gem_memory_class_instance *regions)
 {
-   uint32_t bo_prelim = anv_gem_create_regions_prelim(device, anv_bo_size,
-                                                      num_regions, regions);
-   if (bo_prelim)
-      return bo_prelim;
+   if (device->physical->prelim_drm) {
+      uint32_t bo_prelim = anv_gem_create_regions_prelim(device, anv_bo_size,
+                                                         num_regions, regions);
+      assert(bo_prelim);
+      if (bo_prelim)
+         return bo_prelim;
+   }
 
    struct drm_i915_gem_create_ext_memory_regions ext_regions = {
       .base = { .name = I915_GEM_CREATE_EXT_MEMORY_REGIONS },

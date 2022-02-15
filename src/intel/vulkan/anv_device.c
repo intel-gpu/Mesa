@@ -507,8 +507,12 @@ anv_gather_meminfo(struct anv_physical_device *device, int fd, bool update)
 static VkResult MUST_CHECK
 anv_init_meminfo(struct anv_physical_device *device, int fd)
 {
-   if (anv_gather_meminfo_prelim(device, fd, false) == VK_SUCCESS)
+   if (anv_gather_meminfo_prelim(device, fd, false) == VK_SUCCESS) {
+      device->prelim_drm = true;
       return VK_SUCCESS;
+   }
+
+   device->prelim_drm = false;
    return anv_gather_meminfo(device, fd, false);
 }
 
