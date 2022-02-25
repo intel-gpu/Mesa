@@ -1096,8 +1096,9 @@ static const struct intel_device_info intel_device_info_dg2_g12 = {
    .num_subslices = dual_subslices(1),                          \
    .has_local_mem = false,                                      \
    .apply_hwconfig = true,                                      \
-   .has_64bit_float = true,                                     \
-   .has_64bit_int = true,                                       \
+   /* TODO: Re-enable 64-bit. MD5-699, HSD 1809889541 */        \
+   .has_64bit_float = false /* TODO */,                         \
+   .has_64bit_int = false /* TODO */,                           \
    .has_integer_dword_mul = true,                               \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
