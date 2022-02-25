@@ -2160,6 +2160,10 @@ isl_surf_supports_ccs(const struct isl_device *dev,
                       const struct isl_surf *surf,
                       const struct isl_surf *hiz_or_mcs_surf)
 {
+   /* Hack: temporarily disable ccs on mtl */
+   if (intel_device_info_is_mtl(dev->info))
+      return false;
+
    if (surf->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)
       return false;
 
