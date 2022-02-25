@@ -876,6 +876,10 @@ bool
 isl_format_supports_ccs_e(const struct intel_device_info *devinfo,
                           enum isl_format format)
 {
+   /* Hack: temporarily disable ccs on mtl */
+   if (intel_device_info_is_mtl(devinfo))
+      return false;
+
    /* Wa_22011186057: Disable compression on ADL-P A0 */
    if (devinfo->platform == INTEL_PLATFORM_ADL && devinfo->gt == 2 && devinfo->revision == 0)
       return false;
