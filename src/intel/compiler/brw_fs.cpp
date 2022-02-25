@@ -6585,7 +6585,8 @@ fs_visitor::set_tcs_invocation_id()
    struct brw_vue_prog_data *vue_prog_data = &tcs_prog_data->base;
 
    const bool dg2_plus =
-      devinfo->ver > 12 || intel_device_info_is_dg2(devinfo);
+      devinfo->ver > 12 || intel_device_info_is_dg2(devinfo) ||
+      intel_device_info_is_mtl(devinfo);
    const unsigned instance_id_mask =
       dg2_plus ? INTEL_MASK(7, 0) :
       (devinfo->ver >= 11) ? INTEL_MASK(22, 16) : INTEL_MASK(23, 17);
