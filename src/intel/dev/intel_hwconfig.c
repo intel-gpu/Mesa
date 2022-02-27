@@ -38,12 +38,6 @@
 #define DEBUG_BUILD true
 #endif
 
-struct hwconfig {
-   uint32_t key;
-   uint32_t len;
-   uint32_t val[];
-};
-
 static char *
 key_to_name(uint32_t key)
 {
@@ -128,23 +122,21 @@ key_to_name(uint32_t key)
 }
 
 typedef void (*hwconfig_item_cb)(struct intel_device_info *devinfo,
-                                 const struct hwconfig *item);
+                                 const struct drm_i915_query_hwconfig_blob_item *item);
 
 static void
 intel_process_hwconfig_table(struct intel_device_info *devinfo,
-                             const struct hwconfig *hwconfig,
+                             const struct drm_i915_query_hwconfig_blob_item *hwconfig,
                              int32_t hwconfig_len,
                              hwconfig_item_cb item_callback_func)
 {
    assert(hwconfig);
    assert(hwconfig_len % 4 == 0);
-   const struct hwconfig *current = hwconfig;
-   const struct hwconfig *end =
-      (struct hwconfig*)(((uint32_t*)hwconfig) + (hwconfig_len / 4));
-   while (current < end) {
-      assert(current + 1 < end);
-      struct hwconfig *next =
-         (struct hwconfig*)((uint32_t*)current + 2 + current->len);
+   const struct drm_i915_query_hwconfig_blob_item *current = hwconfig;
+   void *end = (uint8_t*)hwconfig + hwconfig_len;
+   while ((void*)current < end) {
+      assert((void*)(current + 1) < end);
+      void *next = (void*)&current->data[current->length];
       assert(next <= end);
       item_callback_func(devinfo, current);
       current = next;
@@ -171,7 +163,7 @@ intel_process_hwconfig_table(struct intel_device_info *devinfo,
 
 static void
 apply_hwconfig_item(struct intel_device_info *devinfo,
-                    const struct hwconfig *item)
+                    const struct drm_i915_query_hwconfig_blob_item *item)
 {
    switch (item->key) {
    case INTEL_HWCONFIG_MAX_SLICES_SUPPORTED:
@@ -189,30 +181,30 @@ apply_hwconfig_item(struct intel_device_info *devinfo,
    case INTEL_HWCONFIG_DEPRECATED_SLM_SIZE_IN_KB:
       break; /* ignore */
    case INTEL_HWCONFIG_MAX_NUM_EU_PER_DSS:
-      DEVINFO_HWCONFIG(max_eus_per_subslice, item->val[0]);
+      DEVINFO_HWCONFIG(max_eus_per_subslice, item->data[0]);
       break;
    case INTEL_HWCONFIG_NUM_THREADS_PER_EU:
-      DEVINFO_HWCONFIG(num_thread_per_eu, item->val[0]);
+      DEVINFO_HWCONFIG(num_thread_per_eu, item->data[0]);
       break;
    case INTEL_HWCONFIG_TOTAL_VS_THREADS:
-      DEVINFO_HWCONFIG(max_vs_threads, item->val[0]);
+      DEVINFO_HWCONFIG(max_vs_threads, item->data[0]);
       break;
    case INTEL_HWCONFIG_TOTAL_GS_THREADS:
-      DEVINFO_HWCONFIG(max_gs_threads, item->val[0]);
+      DEVINFO_HWCONFIG(max_gs_threads, item->data[0]);
       break;
    case INTEL_HWCONFIG_TOTAL_HS_THREADS:
-      DEVINFO_HWCONFIG(max_tcs_threads, item->val[0]);
+      DEVINFO_HWCONFIG(max_tcs_threads, item->data[0]);
       break;
    case INTEL_HWCONFIG_TOTAL_DS_THREADS:
-      DEVINFO_HWCONFIG(max_tes_threads, item->val[0]);
+      DEVINFO_HWCONFIG(max_tes_threads, item->data[0]);
       break;
    case INTEL_HWCONFIG_TOTAL_VS_THREADS_POCS:
       break; /* ignore */
    case INTEL_HWCONFIG_TOTAL_PS_THREADS:
-      DEVINFO_HWCONFIG(max_threads_per_psd, item->val[0] / 2);
+      DEVINFO_HWCONFIG(max_threads_per_psd, item->data[0] / 2);
       break;
    case INTEL_HWCONFIG_URB_SIZE_PER_SLICE_IN_KB:
-      DEVINFO_HWCONFIG(urb.size, item->val[0]);
+      DEVINFO_HWCONFIG(urb.size, item->data[0]);
       break;
    case INTEL_HWCONFIG_DEPRECATED_MAX_FILL_RATE:
    case INTEL_HWCONFIG_MAX_RCS:
@@ -274,7 +266,7 @@ apply_hwconfig_item(struct intel_device_info *devinfo,
 
 static void
 intel_apply_hwconfig_table(struct intel_device_info *devinfo,
-                           const struct hwconfig *hwconfig,
+                           const struct drm_i915_query_hwconfig_blob_item *hwconfig,
                            int32_t hwconfig_len)
 {
    intel_process_hwconfig_table(devinfo, hwconfig, hwconfig_len,
@@ -291,7 +283,7 @@ void
 intel_get_and_process_hwconfig_table(int fd,
                                      struct intel_device_info *devinfo)
 {
-   struct hwconfig *hwconfig;
+   struct drm_i915_query_hwconfig_blob_item *hwconfig;
    int32_t hwconfig_len = 0;
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
@@ -303,17 +295,17 @@ intel_get_and_process_hwconfig_table(int fd,
 
 static void
 print_hwconfig_item(struct intel_device_info *devinfo,
-                    const struct hwconfig *item)
+                    const struct drm_i915_query_hwconfig_blob_item *item)
 {
    printf("%s: ", key_to_name(item->key));
-   for (int i = 0; i < item->len; i++)
-      printf(i ? ", 0x%x (%d)" : "0x%x (%d)", item->val[i],
-              item->val[i]);
+   for (int i = 0; i < item->length; i++)
+      printf(i ? ", 0x%x (%d)" : "0x%x (%d)", item->data[i],
+              item->data[i]);
    printf("\n");
 }
 
 static void
-intel_print_hwconfig_table(const struct hwconfig *hwconfig,
+intel_print_hwconfig_table(const struct drm_i915_query_hwconfig_blob_item *hwconfig,
                            int32_t hwconfig_len)
 {
    intel_process_hwconfig_table(NULL, hwconfig, hwconfig_len,
@@ -323,7 +315,7 @@ intel_print_hwconfig_table(const struct hwconfig *hwconfig,
 void
 intel_get_and_print_hwconfig_table(int fd)
 {
-   struct hwconfig *hwconfig;
+   struct drm_i915_query_hwconfig_blob_item *hwconfig;
    int32_t hwconfig_len = 0;
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
