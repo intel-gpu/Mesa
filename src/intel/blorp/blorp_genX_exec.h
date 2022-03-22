@@ -827,6 +827,8 @@ blorp_emit_ps_config(struct blorp_batch *batch,
                      const struct blorp_params *params)
 {
    const struct brw_wm_prog_data *prog_data = params->wm_prog_data;
+   UNUSED const struct intel_device_info *devinfo =
+      batch->blorp->compiler->devinfo;
 
    /* Even when thread dispatch is disabled, max threads (dw5.25:31) must be
     * nonzero to prevent the GPU from hanging.  While the documentation doesn't
@@ -894,7 +896,6 @@ blorp_emit_ps_config(struct blorp_batch *batch,
        *
        * In Gfx8 the format is U8-2 whereas in Gfx9+ it is U9-1.
        */
-      const struct intel_device_info *devinfo = batch->blorp->compiler->devinfo;
       ps.MaximumNumberofThreadsPerPSD =
          devinfo->max_threads_per_psd - (GFX_VER == 8 ? 2 : 1);
 
@@ -937,6 +938,13 @@ blorp_emit_ps_config(struct blorp_batch *batch,
          psx.PixelShaderComputesStencil = prog_data->computed_stencil;
 #endif
       }
+#if GFX_VERx10 >= 125
+      /* Wa_22014086893 : always set PixelShaderDoesnotwritetoRT false
+       * during fast clear or resolve.
+       */
+      if (intel_device_info_is_dg2(devinfo))
+         psx.PixelShaderDoesnotwritetoRT = false;
+#endif
 
       if (params->src.enabled)
          psx.PixelShaderKillsPixel = true;
@@ -1300,12 +1308,25 @@ blorp_emit_pipeline(struct blorp_batch *batch,
    uint32_t blend_state_offset = 0;
    uint32_t color_calc_state_offset;
    uint32_t depth_stencil_state_offset;
+   UNUSED const struct intel_device_info *devinfo =
+      batch->blorp->compiler->devinfo;
 
    enum intel_urb_deref_block_size urb_deref_block_size;
    emit_urb_config(batch, params, &urb_deref_block_size);
 
    if (params->wm_prog_data) {
       blend_state_offset = blorp_emit_blend_state(batch, params);
+   } else {
+#if GFX_VERx10 >= 125
+      /* Wa_22014086893 : always set HasWriteableRT true during fast clear
+       * or resolve.
+       */
+      if (intel_device_info_is_dg2(devinfo)) {
+         blorp_emit(batch, GENX(3DSTATE_PS_BLEND), ps_blend) {
+            ps_blend.HasWriteableRT = true;
+         }
+      }
+#endif
    }
    color_calc_state_offset = blorp_emit_color_calc_state(batch, params);
    depth_stencil_state_offset = blorp_emit_depth_stencil_state(batch, params);
