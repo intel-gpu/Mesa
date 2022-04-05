@@ -118,6 +118,7 @@ enum {
 #define IRIS_DIRTY_RENDER_MISC_BUFFER_FLUSHES     (1ull << 33)
 #define IRIS_DIRTY_COMPUTE_MISC_BUFFER_FLUSHES    (1ull << 34)
 #define IRIS_DIRTY_VFG                            (1ull << 35)
+#define IRIS_DIRTY_DS_WRITE_ENABLE                (1ull << 36)
 
 #define IRIS_ALL_DIRTY_FOR_COMPUTE (IRIS_DIRTY_COMPUTE_RESOLVES_AND_FLUSHES | \
                                     IRIS_DIRTY_COMPUTE_MISC_BUFFER_FLUSHES)
@@ -1093,6 +1094,8 @@ void gfx9_toggle_preemption(struct iris_context *ice,
                             struct iris_batch *batch,
                             const struct pipe_draw_info *draw);
 
+bool gfx125_ds_write_state_wa_needed(struct iris_context *ice,
+                                     uint8_t state);
 
 
 #ifdef genX
