@@ -2959,6 +2959,7 @@ struct anv_graphics_pipeline {
 
    bool                                         kill_pixel;
    bool                                         force_fragment_thread_dispatch;
+   bool                                         ds_write_state;
 
    uint32_t                                     vb_used;
    struct anv_pipeline_vertex_binding {

@@ -337,6 +337,49 @@ static const uint32_t genX(vk_to_intel_blend_op)[] = {
    [VK_BLEND_OP_MAX]                         = BLENDFUNCTION_MAX,
 };
 
+#if GFX_VERx10 >= 125
+/**
+ * Check if depth/stencil write state changed. This is required
+ * for Wa_14015842950.
+ */
+static bool
+ds_write_state_wa(const struct vk_dynamic_graphics_state *dyn)
+{
+   bool depth_write_enable =
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE) &&
+      BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE) &&
+      (!BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE) ||
+       (dyn->ds.depth.compare_op != VK_COMPARE_OP_NEVER &&
+        dyn->ds.depth.compare_op != VK_COMPARE_OP_EQUAL));
+
+   bool stencil_all_keep =
+      dyn->ds.stencil.front.op.fail == VK_STENCIL_OP_KEEP &&
+      dyn->ds.stencil.front.op.depth_fail == VK_STENCIL_OP_KEEP &&
+      dyn->ds.stencil.front.op.pass == VK_STENCIL_OP_KEEP &&
+      ((dyn->ds.stencil.back.op.fail == VK_STENCIL_OP_KEEP &&
+        dyn->ds.stencil.back.op.depth_fail == VK_STENCIL_OP_KEEP &&
+        dyn->ds.stencil.back.op.pass == VK_STENCIL_OP_KEEP));
+
+   bool stencil_mask_zero =
+      dyn->ds.stencil.front.write_mask == 0 &&
+      dyn->ds.stencil.back.write_mask == 0;
+
+   bool stencil_func_never =
+      dyn->ds.stencil.front.op.compare == VK_COMPARE_OP_NEVER &&
+      dyn->ds.stencil.front.op.fail == VK_STENCIL_OP_KEEP &&
+      ((dyn->ds.stencil.back.op.compare == VK_COMPARE_OP_NEVER &&
+        dyn->ds.stencil.back.op.fail == VK_STENCIL_OP_KEEP));
+
+   bool stencil_write_enable =
+      !stencil_mask_zero &&
+       (!stencil_all_keep &&
+        !stencil_mask_zero &&
+        !stencil_func_never);
+
+   return depth_write_enable || stencil_write_enable;
+}
+#endif
+
 void
 genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -505,6 +548,19 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
          ds.BackfaceStencilPassDepthFailOp = genX(vk_to_intel_stencil_op)[opt_ds.stencil.back.op.depth_fail];
          ds.BackfaceStencilTestFunction = genX(vk_to_intel_compare_op)[opt_ds.stencil.back.op.compare];
       }
+
+#if GFX_VERx10 >= 125
+      /* Wa_14015842950 */
+      if (intel_device_info_is_dg2(cmd_buffer->device->info)) {
+         bool ds_write_state = ds_write_state_wa(dyn);
+         if (pipeline->ds_write_state != ds_write_state) {
+            anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+               pc.PSSStallSyncEnable = true;
+            }
+            pipeline->ds_write_state = ds_write_state;
+         }
+      }
+#endif
 
       const bool pma = want_stencil_pma_fix(cmd_buffer, &opt_ds);
       genX(cmd_buffer_enable_pma_fix)(cmd_buffer, pma);
