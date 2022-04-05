@@ -1501,9 +1501,13 @@ struct iris_depth_stencil_alpha_state {
    /** Outbound to resolve and cache set tracking. */
    bool depth_writes_enabled;
    bool stencil_writes_enabled;
+   unsigned depth_func:3;     /**< PIPE_FUNC_x */
 
    /** Outbound to Gfx8-9 PMA stall equations */
    bool depth_test_enabled;
+
+   /** Tracking state of DS writes for Wa_14015842950. */
+   bool ds_write_state;
 };
 
 /**
@@ -1521,11 +1525,47 @@ iris_create_zsa_state(struct pipe_context *ctx,
 
    bool two_sided_stencil = state->stencil[1].enabled;
 
+   bool depth_write_enable =
+      state->depth_writemask &&
+      ((!state->depth_enabled) ||
+      ((state->depth_func != PIPE_FUNC_NEVER) &&
+        (state->depth_func != PIPE_FUNC_EQUAL)));
+
+   bool stencil_all_keep =
+      state->stencil[0].fail_op == PIPE_STENCIL_OP_KEEP &&
+      state->stencil[0].zfail_op == PIPE_STENCIL_OP_KEEP &&
+      state->stencil[0].zpass_op == PIPE_STENCIL_OP_KEEP &&
+      (!two_sided_stencil ||
+       (state->stencil[1].fail_op == PIPE_STENCIL_OP_KEEP &&
+        state->stencil[1].zfail_op == PIPE_STENCIL_OP_KEEP &&
+        state->stencil[1].zpass_op == PIPE_STENCIL_OP_KEEP));
+
+   bool stencil_mask_zero =
+      state->stencil[0].writemask == 0 ||
+      (!two_sided_stencil || state->stencil[1].writemask  == 0);
+
+   bool stencil_func_never =
+      state->stencil[0].func == PIPE_FUNC_NEVER &&
+      state->stencil[0].fail_op == PIPE_STENCIL_OP_KEEP &&
+      (!two_sided_stencil ||
+       (state->stencil[1].func == PIPE_FUNC_NEVER &&
+        state->stencil[1].fail_op == PIPE_STENCIL_OP_KEEP));
+
+   bool stencil_write_enable =
+      state->stencil[0].writemask != 0 ||
+      ((two_sided_stencil && state->stencil[1].writemask != 0) &&
+       (!stencil_all_keep &&
+        !stencil_mask_zero &&
+        !stencil_func_never));
+
+   cso->ds_write_state = depth_write_enable || stencil_write_enable;
+
    cso->alpha_enabled = state->alpha_enabled;
    cso->alpha_func = state->alpha_func;
    cso->alpha_ref_value = state->alpha_ref_value;
    cso->depth_writes_enabled = state->depth_writemask;
    cso->depth_test_enabled = state->depth_enabled;
+   cso->depth_func = state->depth_func;
    cso->stencil_writes_enabled =
       state->stencil[0].writemask != 0 ||
       (two_sided_stencil && state->stencil[1].writemask != 0);
@@ -1597,11 +1637,19 @@ iris_bind_zsa_state(struct pipe_context *ctx, void *state)
       if (cso_changed(alpha_func))
          ice->state.dirty |= IRIS_DIRTY_BLEND_STATE;
 
-      if (cso_changed(depth_writes_enabled) || cso_changed(stencil_writes_enabled))
+      if (cso_changed(depth_writes_enabled) ||
+          cso_changed(stencil_writes_enabled)) {
          ice->state.dirty |= IRIS_DIRTY_RENDER_RESOLVES_AND_FLUSHES;
+      }
 
       ice->state.depth_writes_enabled = new_cso->depth_writes_enabled;
       ice->state.stencil_writes_enabled = new_cso->stencil_writes_enabled;
+
+      /* State ds_write_enable changed, need to flag dirty DS. */
+      if (ice->state.ds_write_state !=  new_cso->ds_write_state) {
+         ice->state.dirty |= IRIS_DIRTY_DS_WRITE_ENABLE;
+         ice->state.ds_write_state = new_cso->ds_write_state;
+      }
 
 #if GFX_VER >= 12
       if (cso_changed(depth_bounds))
@@ -5873,6 +5921,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       iris_bufmgr_get_border_color_pool(screen->bufmgr);
    const uint64_t dirty = ice->state.dirty;
    const uint64_t stage_dirty = ice->state.stage_dirty;
+   UNUSED const struct intel_device_info *devinfo = &batch->screen->devinfo;
 
    if (!(dirty & IRIS_ALL_DIRTY_FOR_RENDER) &&
        !(stage_dirty & IRIS_ALL_STAGE_DIRTY_FOR_RENDER))
@@ -6937,6 +6986,17 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       iris_emit_cmd(batch, GENX(3DSTATE_VF_STATISTICS), vf) {
          vf.StatisticsEnable = true;
       }
+   }
+
+   if (dirty & IRIS_DIRTY_DS_WRITE_ENABLE) {
+#if GFX_VERx10 >= 125
+      /* Wa_14015842950 */
+      if (intel_device_info_is_dg2(devinfo)) {
+         iris_emit_pipe_control_flush(
+            batch, "workaround: PSS stall after DS write enable change",
+            PIPE_CONTROL_PSS_STALL_SYNC);
+      }
+#endif
    }
 
 #if GFX_VER == 8
