@@ -312,6 +312,16 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
    if (pc_flags != 0)
       iris_emit_pipe_control_flush(batch, pc_reason, pc_flags);
 
+#if GFX_VERx10 == 125
+   /* Check if blorp ds state matches ours. */
+   uint8_t blorp_ds_state =
+      (params->depth.enabled ? 0x1 : 0) |
+      (params->stencil.enabled ? 0x2 : 0);
+
+   if (gfx125_ds_write_state_wa_needed(ice, blorp_ds_state))
+      blorp_batch->flags |= BLORP_BATCH_NEED_PSS_STALL_SYNC;
+#endif
+
    if (params->depth.enabled &&
        !(blorp_batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))
       genX(emit_depth_state_workarounds)(ice, batch, &params->depth.surf);
