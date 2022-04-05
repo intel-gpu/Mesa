@@ -3356,6 +3356,7 @@ struct anv_graphics_pipeline {
    bool                                         depth_bounds_test_enable;
    bool                                         force_fragment_thread_dispatch;
    bool                                         negative_one_to_one;
+   bool                                         ds_write_state;
 
    /* When primitive replication is used, subpass->view_mask will describe what
     * views to replicate.

@@ -316,6 +316,48 @@ want_stencil_pma_fix(struct anv_cmd_buffer *cmd_buffer)
           wm_prog_data->computed_depth_mode != PSCDEPTH_OFF;
 }
 
+#if GFX_VERx10 >= 125
+/**
+ * Check if depth/stencil write state changed. This is required
+ * for Wa_14015842950.
+ */
+static bool
+ds_write_state_wa(struct anv_dynamic_state *d)
+{
+   bool depth_write_enable =
+      d->depth_test_enable && d->depth_write_enable &&
+      (d->depth_test_enable == false ||
+       (d->depth_compare_op != VK_COMPARE_OP_NEVER &&
+        d->depth_compare_op != VK_COMPARE_OP_EQUAL));
+
+   bool stencil_all_keep =
+      d->stencil_op.front.fail_op == VK_STENCIL_OP_KEEP &&
+      d->stencil_op.front.depth_fail_op == VK_STENCIL_OP_KEEP &&
+      d->stencil_op.front.pass_op == VK_STENCIL_OP_KEEP &&
+      ((d->stencil_op.back.fail_op == VK_STENCIL_OP_KEEP &&
+        d->stencil_op.back.depth_fail_op == VK_STENCIL_OP_KEEP &&
+        d->stencil_op.back.pass_op == VK_STENCIL_OP_KEEP));
+
+   bool stencil_mask_zero =
+      d->stencil_write_mask.front == 0 &&
+      d->stencil_write_mask.back == 0;
+
+   bool stencil_func_never =
+      d->stencil_op.front.compare_op == VK_COMPARE_OP_NEVER &&
+      d->stencil_op.front.fail_op == VK_STENCIL_OP_KEEP &&
+      ((d->stencil_op.back.compare_op == VK_COMPARE_OP_NEVER &&
+        d->stencil_op.back.fail_op == VK_STENCIL_OP_KEEP));
+
+   bool stencil_write_enable =
+      !stencil_mask_zero &&
+       (!stencil_all_keep &&
+        !stencil_mask_zero &&
+        !stencil_func_never);
+
+   return depth_write_enable || stencil_write_enable;
+}
+#endif
+
 void
 genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -554,6 +596,19 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 
       anv_batch_emit_merge(&cmd_buffer->batch, dwords,
                            pipeline->gfx9.wm_depth_stencil);
+
+#if GFX_VERx10 >= 125
+      /* Wa_14015842950 */
+      if (intel_device_info_is_dg2(&cmd_buffer->device->info)) {
+         bool ds_write_state = ds_write_state_wa(d);
+         if (pipeline->ds_write_state != ds_write_state) {
+            anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+               pc.PSSStallSyncEnable = true;
+            }
+            pipeline->ds_write_state = ds_write_state;
+         }
+      }
+#endif
 
       genX(cmd_buffer_enable_pma_fix)(cmd_buffer,
                                       want_stencil_pma_fix(cmd_buffer));
