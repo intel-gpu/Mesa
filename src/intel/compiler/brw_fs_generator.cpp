@@ -2399,7 +2399,14 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
          brw_set_default_mask_control(p, BRW_MASK_DISABLE);
          brw_MOV(p, dst, src[1]);
          brw_set_default_mask_control(p, BRW_MASK_ENABLE);
-         brw_set_default_swsb(p, tgl_swsb_null());
+         if (intel_device_info_is_mtl(devinfo) &&
+             (get_exec_type(inst) == BRW_REGISTER_TYPE_DF ||
+              inst->dst.type == BRW_REGISTER_TYPE_DF)) {
+            const tgl_swsb swsb = brw_get_default_swsb(p);
+            brw_set_default_swsb(p, tgl_swsb_dst_dep(swsb, 0));
+         } else {
+            brw_set_default_swsb(p, tgl_swsb_null());
+         }
          brw_MOV(p, dst, src[0]);
          break;
 
