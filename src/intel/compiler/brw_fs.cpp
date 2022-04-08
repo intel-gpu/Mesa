@@ -6346,7 +6346,7 @@ needs_dummy_fence(const intel_device_info *devinfo, fs_inst *inst)
    return inst->dst.file == BAD_FILE;
 }
 
-/* Wa_22013689345
+/* Wa_22013689345, Wa_14014909922 (MTL)
  *
  * We need to emit UGM fence message before EOT, if shader has any UGM write
  * or atomic message.
@@ -6360,7 +6360,9 @@ fs_visitor::emit_dummy_memory_fence_before_eot()
    bool progress = false;
    bool has_ugm_write_or_atomic = false;
 
-   if (!intel_device_info_is_dg2(devinfo))
+   if (!intel_device_info_is_dg2(devinfo) ||
+       (!intel_device_info_is_mtl(devinfo) &&
+        devinfo->revision < 4))
       return;
 
    foreach_block_and_inst_safe (block, fs_inst, inst, cfg) {
