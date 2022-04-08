@@ -1713,7 +1713,8 @@ emit_3dstate_hs_te_ds(struct anv_graphics_pipeline *pipeline,
       te.MaximumTessellationFactorOdd = 63.0;
       te.MaximumTessellationFactorNotOdd = 64.0;
 #if GFX_VERx10 >= 125
-      if (intel_device_info_is_dg2(devinfo)) {
+      if (intel_device_info_is_dg2(devinfo) ||
+          intel_device_info_is_mtl(devinfo)) {
          if (devinfo->revision == 0) {
             /* Tessellation Distribution is enabled in B-stepping. See HSD:
              * 1409785130
@@ -1723,7 +1724,7 @@ emit_3dstate_hs_te_ds(struct anv_graphics_pipeline *pipeline,
             /* Wa_22012785325 */
             te.TessellationDistributionMode = TEDMODE_RR_STRICT;
          }
-         /* Wa_14015297576:
+         /* Wa_14015297576, Wa_14015322178:
           *
           * Disable Tessellation Distribution when primitive Id is enabled.
           */
