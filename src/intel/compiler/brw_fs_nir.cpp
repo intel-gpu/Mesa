@@ -4514,8 +4514,10 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
 
          if (slm_fence) {
             assert(opcode == SHADER_OPCODE_MEMORY_FENCE);
-            if (intel_device_info_is_dg2(devinfo)) {
-               /* Wa_14014063774
+            if (intel_device_info_is_dg2(devinfo) ||
+                (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4)) {
+               /* Wa_14014063774 (DG2)
+                * Wa_14014081338 (MTL)
                 *
                 * If there are multiple SLM load SBID that are live, then the
                 * immeidate mask for sync.allwr should include all the
