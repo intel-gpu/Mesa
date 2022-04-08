@@ -655,14 +655,16 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VERx10 >= 125
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_IA_PRIMITIVE_RESTART_ENABLE)) {
+      const struct intel_device_info *devinfo = cmd_buffer->device->info;
       anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_VFG), vfg) {
          /* If 3DSTATE_TE: TE Enable == 1 then RR_STRICT else RR_FREE*/
          vfg.DistributionMode =
             anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ? RR_STRICT :
                                                                       RR_FREE;
          vfg.DistributionGranularity = BatchLevelGranularity;
-         /* Wa_14014890652 */
-         if (intel_device_info_is_dg2(cmd_buffer->device->info))
+         /* Wa_14014890652, Wa_22013683737 */
+         if (intel_device_info_is_dg2(devinfo) ||
+             (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4))
             vfg.GranularityThresholdDisable = 1;
          vfg.ListCutIndexEnable = dyn->ia.primitive_restart_enable;
          /* 192 vertices for TRILIST_ADJ */
