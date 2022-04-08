@@ -3281,7 +3281,8 @@ gfx12_set_memory_fence_message(struct brw_codegen *p,
          flush_type = LSC_FLUSH_TYPE_EVICT;
       }
 
-      /* Wa_14014435656:
+      /* Wa_14014435656 (DG2):
+       * Wa_14014488340 (MTL):
        *
        *   "For any fence greater than local scope, always set flush type to
        *    at least invalidate so that fence goes on properly."
@@ -3292,7 +3293,9 @@ gfx12_set_memory_fence_message(struct brw_codegen *p,
        * Here set scope to NONE_6 instead of NONE, which has the same effect
        * as NONE but avoids the downgrade to scope LOCAL.
        */
-      if (intel_device_info_is_dg2(p->devinfo) &&
+      if ((intel_device_info_is_dg2(p->devinfo) ||
+           (intel_device_info_is_mtl(p->devinfo) &&
+            intel_device_info_wa_stepping(p->devinfo) < INTEL_STEPPING_B0)) &&
           scope > LSC_FENCE_LOCAL &&
           flush_type == LSC_FLUSH_TYPE_NONE) {
          flush_type = LSC_FLUSH_TYPE_NONE_6;
