@@ -6421,7 +6421,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
             _iris_pack_command(batch, GENX(3DSTATE_TE), te_state, te) {
 #if GFX_VERx10 >= 125
                const struct intel_device_info *devinfo = &batch->screen->devinfo;
-               /* Wa_14015297576:
+               /* Wa_14015297576 (DG2), Wa_14015322178 (MTL):
                 *
                 * Disable Tessellation Distribution when primitive Id is enabled.
                 *
@@ -6430,8 +6430,9 @@ iris_upload_dirty_render_state(struct iris_context *ice,
                 * Disable Tessellation Distribution before B0.
                 */
                bool disable_tess_dist = includes_primitive_id ||
-                  (GFX_VERx10 >= 125 && intel_device_info_is_dg2(devinfo) &&
-                   devinfo->revision < 4);
+                  (GFX_VERx10 >= 125 &&
+                   (intel_device_info_is_dg2(devinfo) ||
+                    intel_device_info_is_mtl(devinfo)) && devinfo->revision < 4);
 
                /* For Wa_22012785325, use TEDMODE_RR_STRICT instead of
                 * TEDMODE_RR_FREE.
