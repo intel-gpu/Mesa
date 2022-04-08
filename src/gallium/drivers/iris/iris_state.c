@@ -7030,13 +7030,15 @@ iris_upload_dirty_render_state(struct iris_context *ice,
 #if GFX_VERx10 >= 125
    if (dirty & IRIS_DIRTY_VFG) {
       iris_emit_cmd(batch, GENX(3DSTATE_VFG), vfg) {
+         const struct intel_device_info *devinfo = &screen->devinfo;
          /* If 3DSTATE_TE: TE Enable == 1 then RR_STRICT else RR_FREE*/
          vfg.DistributionMode =
             ice->shaders.prog[MESA_SHADER_TESS_EVAL] != NULL ? RR_STRICT :
                                                                RR_FREE;
          vfg.DistributionGranularity = BatchLevelGranularity;
-         /* Wa_14014890652 */
-         if (intel_device_info_is_dg2(&batch->screen->devinfo))
+         /* Wa_14014890652, Wa_22013683737 */
+         if (intel_device_info_is_dg2(devinfo) ||
+             (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4))
             vfg.GranularityThresholdDisable = 1;
          vfg.ListCutIndexEnable = draw->primitive_restart;
          /* 192 vertices for TRILIST_ADJ */
