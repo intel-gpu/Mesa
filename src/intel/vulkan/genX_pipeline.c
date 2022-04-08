@@ -1921,8 +1921,10 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
          anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL) ? RR_STRICT :
          RR_FREE;
       vfg.DistributionGranularity = BatchLevelGranularity;
-      /* Wa_14014890652 */
-      if (intel_device_info_is_dg2(device->info))
+      /* Wa_14014890652, Wa_22013683737 */
+      if (intel_device_info_is_dg2(device->info) ||
+          (intel_device_info_is_mtl(device->info) &&
+           intel_device_info_wa_stepping(device->info) < INTEL_STEPPING_B0))
          vfg.GranularityThresholdDisable = 1;
       /* 192 vertices for TRILIST_ADJ */
       vfg.ListNBatchSizeScale = 0;
