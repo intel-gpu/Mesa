@@ -6948,6 +6948,13 @@ iris_upload_dirty_render_state(struct iris_context *ice,
    }
 
    if (dirty & IRIS_DIRTY_VF) {
+#if GFX_VERx10 >= 125
+      /* Wa_16012775297, emit dummy VF statistics before each 3DSTATE_VF. */
+      iris_emit_cmd(batch, GENX(3DSTATE_VF_STATISTICS), vfs) {
+         vfs.StatisticsEnable = true;
+      }
+#endif
+
       iris_emit_cmd(batch, GENX(3DSTATE_VF), vf) {
 #if GFX_VERx10 >= 125
          vf.GeometryDistributionEnable = true;
