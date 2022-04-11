@@ -6984,6 +6984,8 @@ iris_upload_render_state(struct iris_context *ice,
                          const struct pipe_draw_start_count_bias *sc)
 {
    bool use_predicate = ice->state.predicate == IRIS_PREDICATE_STATE_USE_BIT;
+   UNUSED struct iris_screen *screen = batch->screen;
+   UNUSED const struct intel_device_info *devinfo = &screen->devinfo;
 
    trace_intel_begin_draw(&batch->trace);
 
@@ -7196,6 +7198,13 @@ iris_upload_render_state(struct iris_context *ice,
          }
       }
    }
+
+#if GFX_VERx10 >= 125
+   /* Wa_16014538804 - Send empty/dummy pipe control after 3DPRIMITIVE. */
+   if (intel_device_info_is_dg2(devinfo) ||
+       (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4))
+      iris_emit_pipe_control_flush(batch, "Wa_16014538804", 0);
+#endif
 
    iris_batch_sync_region_end(batch);
 
