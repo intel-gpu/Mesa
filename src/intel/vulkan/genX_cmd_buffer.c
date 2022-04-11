@@ -4131,6 +4131,7 @@ void genX(CmdDraw)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4163,6 +4164,10 @@ void genX(CmdDraw)(
       prim.BaseVertexLocation       = 0;
    }
 
+#if GFX_VERx10 >= 125
+   genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
+
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
 
    trace_intel_end_draw(&cmd_buffer->trace, count);
@@ -4179,6 +4184,7 @@ void genX(CmdDrawMultiEXT)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4212,6 +4218,9 @@ void genX(CmdDrawMultiEXT)(
          prim.StartInstanceLocation    = firstInstance;
          prim.BaseVertexLocation       = 0;
       }
+#if GFX_VERx10 >= 125
+      genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
    }
 
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
@@ -4230,6 +4239,7 @@ void genX(CmdDrawIndexed)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4261,6 +4271,10 @@ void genX(CmdDrawIndexed)(
       prim.BaseVertexLocation       = vertexOffset;
    }
 
+#if GFX_VERx10 >= 125
+   genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
+
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, RANDOM);
 
    trace_intel_end_draw_indexed(&cmd_buffer->trace, count);
@@ -4278,6 +4292,7 @@ void genX(CmdDrawMultiIndexedEXT)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4368,6 +4383,9 @@ void genX(CmdDrawMultiIndexedEXT)(
             prim.StartInstanceLocation    = firstInstance;
             prim.BaseVertexLocation       = draw->vertexOffset;
          }
+#if GFX_VERx10 >= 125
+         genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
       }
    }
 
@@ -4398,6 +4416,7 @@ void genX(CmdDrawIndirectByteCountEXT)(
    ANV_FROM_HANDLE(anv_buffer, counter_buffer, counterBuffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    /* firstVertex is always zero for this draw function */
    const uint32_t firstVertex = 0;
@@ -4449,6 +4468,10 @@ void genX(CmdDrawIndirectByteCountEXT)(
       prim.VertexAccessType         = SEQUENTIAL;
       prim.PrimitiveTopologyType    = cmd_buffer->state.gfx.primitive_topology;
    }
+
+#if GFX_VERx10 >= 125
+   genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
 
    update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
 
@@ -4508,6 +4531,7 @@ void genX(CmdDrawIndirect)(
    ANV_FROM_HANDLE(anv_buffer, buffer, _buffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4546,6 +4570,10 @@ void genX(CmdDrawIndirect)(
          prim.PrimitiveTopologyType    = cmd_buffer->state.gfx.primitive_topology;
       }
 
+#if GFX_VERx10 >= 125
+      genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
+
       update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
 
       offset += stride;
@@ -4565,6 +4593,7 @@ void genX(CmdDrawIndexedIndirect)(
    ANV_FROM_HANDLE(anv_buffer, buffer, _buffer);
    struct anv_graphics_pipeline *pipeline = cmd_buffer->state.gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4603,6 +4632,10 @@ void genX(CmdDrawIndexedIndirect)(
          prim.VertexAccessType         = RANDOM;
          prim.PrimitiveTopologyType    = cmd_buffer->state.gfx.primitive_topology;
       }
+
+#if GFX_VERx10 >= 125
+      genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
 
       update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, RANDOM);
 
@@ -4732,6 +4765,7 @@ void genX(CmdDrawIndirectCount)(
    struct anv_cmd_state *cmd_state = &cmd_buffer->state;
    struct anv_graphics_pipeline *pipeline = cmd_state->gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4775,6 +4809,10 @@ void genX(CmdDrawIndirectCount)(
          prim.PrimitiveTopologyType    = cmd_buffer->state.gfx.primitive_topology;
       }
 
+#if GFX_VERx10 >= 125
+      genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
+
       update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, SEQUENTIAL);
 
       offset += stride;
@@ -4800,6 +4838,7 @@ void genX(CmdDrawIndexedIndirectCount)(
    struct anv_cmd_state *cmd_state = &cmd_buffer->state;
    struct anv_graphics_pipeline *pipeline = cmd_state->gfx.pipeline;
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
+   UNUSED const struct intel_device_info *devinfo = &cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -4843,6 +4882,10 @@ void genX(CmdDrawIndexedIndirectCount)(
          prim.VertexAccessType         = RANDOM;
          prim.PrimitiveTopologyType    = cmd_buffer->state.gfx.primitive_topology;
       }
+
+#if GFX_VERx10 >= 125
+      genX(batch_emit_empty_pipe_control_wa)(devinfo, &cmd_buffer->batch);
+#endif
 
       update_dirty_vbs_for_gfx8_vb_flush(cmd_buffer, RANDOM);
 
@@ -6127,6 +6170,21 @@ genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(struct anv_cmd_buffer *cmd_b
          dirty->end = MAX2(dirty->end, bound->end);
       }
    }
+}
+
+/**
+ * Wa_16014538804 (DG2), Wa_14015231253 (MTL)
+ *
+ * Send empty pipe control after each 3DPRIMITIVE.
+ */
+void
+genX(batch_emit_empty_pipe_control_wa)(const struct intel_device_info *devinfo,
+                                       struct anv_batch *batch)
+{
+   if (!intel_device_info_is_dg2(devinfo) ||
+       !(intel_device_info_is_mtl(devinfo) && devinfo->revision < 4))
+      return;
+   anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) { }
 }
 
 /**

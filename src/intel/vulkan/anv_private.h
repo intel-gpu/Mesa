@@ -2942,6 +2942,8 @@ anv_cmd_buffer_alloc_blorp_binding_table(struct anv_cmd_buffer *cmd_buffer,
 
 void anv_cmd_buffer_dump(struct anv_cmd_buffer *cmd_buffer);
 
+void anv_cmd_buffer_empty_pipe_control_wa(struct anv_cmd_buffer *cmd_buffer);
+
 void anv_cmd_emit_conditional_render_predicate(struct anv_cmd_buffer *cmd_buffer);
 
 enum anv_bo_sync_state {

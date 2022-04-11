@@ -232,6 +232,9 @@ emit_so_memcpy(struct anv_batch *batch, struct anv_device *device,
       prim.StartInstanceLocation    = 0;
       prim.BaseVertexLocation       = 0;
    }
+#if GFX_VERx10 >= 125
+   genX(batch_emit_empty_pipe_control_wa)(&device->info, batch);
+#endif
 }
 
 void

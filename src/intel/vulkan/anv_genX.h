@@ -79,6 +79,9 @@ void genX(cmd_buffer_emit_hashing_mode)(struct anv_cmd_buffer *cmd_buffer,
                                         unsigned width, unsigned height,
                                         unsigned scale);
 
+void genX(batch_emit_empty_pipe_control_wa)(const struct intel_device_info *devinfo,
+                                            struct anv_batch *batch);
+
 void genX(flush_pipeline_select_3d)(struct anv_cmd_buffer *cmd_buffer);
 void genX(flush_pipeline_select_gpgpu)(struct anv_cmd_buffer *cmd_buffer);
 
