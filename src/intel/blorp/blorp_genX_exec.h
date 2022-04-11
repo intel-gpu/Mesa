@@ -2083,6 +2083,14 @@ blorp_exec_3d(struct blorp_batch *batch, const struct blorp_params *params)
       prim.InstanceCount = params->num_layers;
    }
 
+#if GFX_VERx10 >= 125
+   /* Wa_16014538804 - Send empty/dummy pipe control after 3DPRIMITIVE. */
+   const struct intel_device_info *devinfo = batch->blorp->compiler->devinfo;
+   if (intel_device_info_is_dg2(devinfo) ||
+       (intel_device_info_is_mtl(devinfo) && devinfo->revision < 4))
+      blorp_emit(batch, GENX(PIPE_CONTROL), pc) { }
+#endif
+
    blorp_measure_end(batch, params);
 }
 
