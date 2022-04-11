@@ -1994,6 +1994,7 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
    }
 #endif
 
+   /* Wa_16012775297, emit dummy VF statistics before each 3DSTATE_VF. */
    emit_3dstate_vf_statistics(pipeline);
 
    if (anv_pipeline_is_primitive(pipeline)) {
