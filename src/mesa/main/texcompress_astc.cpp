@@ -36,9 +36,11 @@
 #include "texcompress_astc.h"
 #include "macros.h"
 #include "util/half_float.h"
+#include "util/os_time.h"
 #include <stdio.h>
 #include <cstdlib>  // for abort() on windows
 
+static bool VERBOSE_PERF = false;
 static bool VERBOSE_DECODE = false;
 static bool VERBOSE_WRITE = false;
 
@@ -1856,6 +1858,10 @@ void *thread_work(void *data)
       src_row += src_stride;
       dst_row += dst_stride * blk_h;
    }
+
+   if (VERBOSE_PERF)
+      printf("\tFinished unpack with height %d\n", src_height);
+
    return NULL;
 }
 
@@ -1875,15 +1881,74 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_height,
                          mesa_format format)
 {
-   struct thread_data t_data = {
-      .dst_row = dst_row,
-      .dst_stride = dst_stride,
-      .src_row = src_row,
-      .src_stride = src_stride,
-      .src_width = src_width,
-      .src_height = src_height,
-      .format = format,
-   };
+   int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
 
-   thread_work(&t_data);
+   unsigned blk_w, blk_h;
+   _mesa_get_format_block_size(format, &blk_w, &blk_h);
+   int y_blocks = DIV_ROUND_UP(src_height, blk_h);
+
+   util_cpu_detect();
+   int nr_cpus = util_get_cpu_caps()->nr_cpus;
+
+   /* Determine the number of row chunks we'd like to hand off to individual
+    * CPUs.
+    *
+    * When testing a particular system configuration, the overhead of
+    * splitting a 4blk-by-4row ASTC_8x8 texture was found to be higher than
+    * the benefit gained. So, we limit the smallest chunk height to four rows.
+    * We make simplifying assumptions for the actual condition checked.
+    *
+    * TODO: Test more configurations.
+    */
+   int max_num_chunks = DIV_ROUND_UP(y_blocks, 4);
+   int nr_chunks = MIN2(max_num_chunks, nr_cpus);
+
+   struct thread_data *t_data =
+      (struct thread_data*)malloc(sizeof(struct thread_data) * nr_chunks);
+
+   unsigned y = 0;
+   for (int chunk = 0; chunk < nr_chunks; chunk++) {
+
+      /* We want to distribute the work as evenly as possible. When a perfect
+       * distribution isn't possible, we choose to give the earlier threads
+       * slightly more work than the others to increase CPU utilization.
+       */
+      unsigned height_el = DIV_ROUND_UP(y_blocks - y, nr_chunks - chunk);
+
+      t_data[chunk] = {
+         .dst_row = dst_row + dst_stride * blk_h * y,
+         .dst_stride = dst_stride,
+         .src_row = src_row + src_stride * y,
+         .src_stride = src_stride,
+         .src_width = src_width,
+         .src_height = MIN2(blk_h * height_el, src_height - y * blk_h),
+         .format = format,
+      };
+
+      if (VERBOSE_PERF) {
+         printf("Chunk %d %s unpack: %d-%d (%del) -> %d-%d (%dpx)\n",
+                chunk, "Execute",
+                y, y+height_el-1, height_el,
+                y * blk_h, y * blk_h + t_data[chunk].src_height-1,
+                t_data[chunk].src_height);
+      }
+
+      {
+         int64_t exec_start = VERBOSE_PERF ? os_time_get() : 0;
+
+         thread_work(&t_data[chunk]);
+
+         if (VERBOSE_PERF)
+            printf("Executed for %ldus\n", os_time_get() - exec_start);
+      }
+
+      y += height_el;
+   }
+
+   free(t_data);
+
+   if (VERBOSE_PERF) {
+      printf("Unpack done in %ldus\n", os_time_get() - unpack_start);
+      puts("");
+   }
 }
