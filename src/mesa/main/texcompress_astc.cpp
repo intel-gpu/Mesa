@@ -1796,22 +1796,27 @@ decode_error::type Block::calculate_colour_endpoints_size()
    return decode_error::invalid_colour_endpoints_size;
 }
 
-/**
- * Decode ASTC 2D LDR texture data.
- *
- * \param src_width in pixels
- * \param src_height in pixels
- * \param dst_stride in bytes
- */
-extern "C" void
-_mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
-                         unsigned dst_stride,
-                         const uint8_t *src_row,
-                         unsigned src_stride,
-                         unsigned src_width,
-                         unsigned src_height,
-                         mesa_format format)
+struct thread_data {
+   uint8_t *dst_row;
+   unsigned dst_stride;
+   const uint8_t *src_row;
+   unsigned src_stride;
+   unsigned src_width;
+   unsigned src_height;
+   mesa_format format;
+};
+
+void *thread_work(void *data)
 {
+   struct thread_data *t_data = (struct thread_data *) data;
+   uint8_t *dst_row = t_data->dst_row;
+   unsigned dst_stride = t_data->dst_stride;
+   const uint8_t *src_row = t_data->src_row;
+   unsigned src_stride = t_data->src_stride;
+   unsigned src_width = t_data->src_width;
+   unsigned src_height = t_data->src_height;
+   mesa_format format = t_data->format;
+
    assert(_mesa_is_format_astc_2d(format));
    bool srgb = _mesa_is_format_srgb(format);
 
@@ -1851,4 +1856,34 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
       src_row += src_stride;
       dst_row += dst_stride * blk_h;
    }
+   return NULL;
+}
+
+/**
+ * Decode ASTC 2D LDR texture data.
+ *
+ * \param src_width in pixels
+ * \param src_height in pixels
+ * \param dst_stride in bytes
+ */
+extern "C" void
+_mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
+                         unsigned dst_stride,
+                         const uint8_t *src_row,
+                         unsigned src_stride,
+                         unsigned src_width,
+                         unsigned src_height,
+                         mesa_format format)
+{
+   struct thread_data t_data = {
+      .dst_row = dst_row,
+      .dst_stride = dst_stride,
+      .src_row = src_row,
+      .src_stride = src_stride,
+      .src_width = src_width,
+      .src_height = src_height,
+      .format = format,
+   };
+
+   thread_work(&t_data);
 }
