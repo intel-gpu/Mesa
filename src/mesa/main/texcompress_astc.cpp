@@ -39,6 +39,7 @@
 #include "util/os_time.h"
 #include <stdio.h>
 #include <cstdlib>  // for abort() on windows
+#include <pthread.h>
 
 static bool VERBOSE_PERF = false;
 static bool VERBOSE_DECODE = false;
@@ -1906,6 +1907,13 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
    struct thread_data *t_data =
       (struct thread_data*)malloc(sizeof(struct thread_data) * nr_chunks);
 
+   /* To increase CPU utilization, we choose to reserve a chunk of work for
+    * the current thread instead of having it create an additional thread and
+    * wait for the others.
+    */
+   int nr_pthreads = nr_chunks - 1;
+   pthread_t *tids = (pthread_t*)malloc(sizeof(pthread_t) * nr_pthreads);
+
    unsigned y = 0;
    for (int chunk = 0; chunk < nr_chunks; chunk++) {
 
@@ -1927,13 +1935,15 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
 
       if (VERBOSE_PERF) {
          printf("Chunk %d %s unpack: %d-%d (%del) -> %d-%d (%dpx)\n",
-                chunk, "Execute",
+                chunk, chunk < nr_pthreads ? "pthread" : "Execute",
                 y, y+height_el-1, height_el,
                 y * blk_h, y * blk_h + t_data[chunk].src_height-1,
                 t_data[chunk].src_height);
       }
 
-      {
+      if (chunk < nr_pthreads) {
+         pthread_create(&tids[chunk], NULL, thread_work, &t_data[chunk]);
+      } else {
          int64_t exec_start = VERBOSE_PERF ? os_time_get() : 0;
 
          thread_work(&t_data[chunk]);
@@ -1945,6 +1955,22 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
       y += height_el;
    }
 
+   if (nr_pthreads > 0) {
+      int64_t wait_start = 0;
+      if (VERBOSE_PERF) {
+         printf("Waited on threads:\n");
+         wait_start = os_time_get();
+      }
+
+      for (int t = 0; t < nr_pthreads; ++t)
+         pthread_join(tids[t], NULL);
+
+      if (VERBOSE_PERF) {
+         printf("... for %ldus\n", os_time_get() - wait_start);
+      }
+   }
+
+   free(tids);
    free(t_data);
 
    if (VERBOSE_PERF) {
