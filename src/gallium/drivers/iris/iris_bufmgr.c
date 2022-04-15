@@ -2640,3 +2640,9 @@ iris_bufmgr_sram_size(struct iris_bufmgr *bufmgr)
 {
    return bufmgr->sys.size;
 }
+
+bool
+iris_using_prelim_drm(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->prelim_drm;
+}
