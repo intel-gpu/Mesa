@@ -65,6 +65,8 @@ enum modifier_priority {
    MODIFIER_PRIORITY_4,
    MODIFIER_PRIORITY_4_DG2_RC_CCS,
    MODIFIER_PRIORITY_4_DG2_RC_CCS_CC,
+   MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS,
+   MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC,
 };
 
 static const uint64_t priority_to_modifier[] = {
@@ -78,13 +80,17 @@ static const uint64_t priority_to_modifier[] = {
    [MODIFIER_PRIORITY_4] = I915_FORMAT_MOD_4_TILED,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS_CC] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+   [MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS] = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS,
+   [MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC] = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC,
 };
 
 static bool
-modifier_is_supported(const struct intel_device_info *devinfo,
+modifier_is_supported(struct iris_screen *screen,
                       enum pipe_format pfmt, unsigned bind,
                       uint64_t modifier)
 {
+   const struct intel_device_info *devinfo = &screen->devinfo;
+
    /* Check for basic device support. */
    switch (modifier) {
    case DRM_FORMAT_MOD_LINEAR:
@@ -113,6 +119,12 @@ modifier_is_supported(const struct intel_device_info *devinfo,
       if (devinfo->verx10 < 125 || iris_using_prelim_drm(screen->bufmgr))
          return false;
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+      if (devinfo->verx10 < 125 || !iris_using_prelim_drm(screen->bufmgr))
+         return false;
+      break;
    case DRM_FORMAT_MOD_INVALID:
    default:
       return false;
@@ -120,6 +132,7 @@ modifier_is_supported(const struct intel_device_info *devinfo,
 
    /* Check remaining requirements. */
    switch (modifier) {
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
       if (INTEL_DEBUG(DEBUG_NO_CCS))
@@ -138,6 +151,8 @@ modifier_is_supported(const struct intel_device_info *devinfo,
          return false;
       }
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
@@ -163,7 +178,7 @@ modifier_is_supported(const struct intel_device_info *devinfo,
 }
 
 static uint64_t
-select_best_modifier(struct intel_device_info *devinfo,
+select_best_modifier(struct iris_screen *screen,
                      const struct pipe_resource *templ,
                      const uint64_t *modifiers,
                      int count)
@@ -171,11 +186,17 @@ select_best_modifier(struct intel_device_info *devinfo,
    enum modifier_priority prio = MODIFIER_PRIORITY_INVALID;
 
    for (int i = 0; i < count; i++) {
-      if (!modifier_is_supported(devinfo, templ->format, templ->bind,
+      if (!modifier_is_supported(screen, templ->format, templ->bind,
                                  modifiers[i]))
          continue;
 
       switch (modifiers[i]) {
+      case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+         prio = MAX2(prio, MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC);
+         break;
+      case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+         prio = MAX2(prio, MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS);
+         break;
       case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
          prio = MAX2(prio, MODIFIER_PRIORITY_4_DG2_RC_CCS_CC);
          break;
@@ -234,7 +255,6 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
                             int *count)
 {
    struct iris_screen *screen = (void *) pscreen;
-   const struct intel_device_info *devinfo = &screen->devinfo;
 
    uint64_t all_modifiers[] = {
       DRM_FORMAT_MOD_LINEAR,
@@ -243,6 +263,9 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_MC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC,
       I915_FORMAT_MOD_Y_TILED,
       I915_FORMAT_MOD_Y_TILED_CCS,
       I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS,
@@ -253,7 +276,7 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
    int supported_mods = 0;
 
    for (int i = 0; i < ARRAY_SIZE(all_modifiers); i++) {
-      if (!modifier_is_supported(devinfo, pfmt, 0, all_modifiers[i]))
+      if (!modifier_is_supported(screen, pfmt, 0, all_modifiers[i]))
          continue;
 
       if (supported_mods < max) {
@@ -278,9 +301,8 @@ iris_is_dmabuf_modifier_supported(struct pipe_screen *pscreen,
                                   bool *external_only)
 {
    struct iris_screen *screen = (void *) pscreen;
-   const struct intel_device_info *devinfo = &screen->devinfo;
 
-   if (modifier_is_supported(devinfo, pfmt, 0, modifier)) {
+   if (modifier_is_supported(screen, pfmt, 0, modifier)) {
       if (external_only)
          *external_only = is_modifier_external_only(pfmt, modifier);
 
@@ -299,11 +321,14 @@ iris_get_dmabuf_modifier_planes(struct pipe_screen *pscreen, uint64_t modifier,
    switch (modifier) {
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       return 3;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_CCS:
       return 2 * planes;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    default:
@@ -999,6 +1024,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
                           4096, IRIS_MEMZONE_OTHER, BO_ALLOC_ZEROED);
       }
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
       assert(num_main_planes == 1);
       assert(num_planes == 1);
@@ -1018,6 +1044,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
       r[0]->aux.clear_color_offset = r[2]->aux.clear_color_offset;
       r[0]->aux.clear_color_unknown = true;
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       assert(num_main_planes == 1);
       assert(num_planes == 2);
@@ -1041,6 +1068,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
       }
       assert(!isl_aux_usage_has_fast_clears(res->mod_info->aux_usage));
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
       assert(!isl_aux_usage_has_fast_clears(res->mod_info->aux_usage));
       break;
@@ -1107,14 +1135,13 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
                                     int modifiers_count)
 {
    struct iris_screen *screen = (struct iris_screen *)pscreen;
-   struct intel_device_info *devinfo = &screen->devinfo;
    struct iris_resource *res = iris_alloc_resource(pscreen, templ);
 
    if (!res)
       return NULL;
 
    uint64_t modifier =
-      select_best_modifier(devinfo, templ, modifiers, modifiers_count);
+      select_best_modifier(screen, templ, modifiers, modifiers_count);
 
    if (modifier == DRM_FORMAT_MOD_INVALID && modifiers_count > 0) {
       fprintf(stderr, "Unsupported modifier, resource creation failed.\n");
@@ -1290,6 +1317,7 @@ mod_plane_is_clear_color(uint64_t modifier, uint32_t plane)
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 2;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 1;
