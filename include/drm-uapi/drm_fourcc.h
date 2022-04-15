@@ -434,6 +434,16 @@ extern "C" {
 	((((__u64)DRM_FORMAT_MOD_VENDOR_## vendor) << 56) | ((val) & 0x00ffffffffffffffULL))
 
 /*
+ * Intel modifiers for new platforms should be added using the PRELIM_ prefix
+ * and the intel_prelim_fourcc_mod_code macro, while the upstreaming of the
+ * platform should happen without the prefix using the fourcc_mod_code macro.
+ */
+#define INTEL_PRELIM_ID_FLAG         (1ULL << 55)
+
+#define intel_prelim_fourcc_mod_code(val) \
+	(fourcc_mod_code(INTEL, (val)) | INTEL_PRELIM_ID_FLAG)
+
+/*
  * Format Modifier tokens:
  *
  * When adding a new token please document the layout with a code comment,
@@ -630,6 +640,7 @@ extern "C" {
  * main surface pitch is required to be a multiple of four Tile 4 widths.
  */
 #define I915_FORMAT_MOD_4_TILED_DG2_RC_CCS fourcc_mod_code(INTEL, 10)
+#define PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS intel_prelim_fourcc_mod_code(13)
 
 /*
  * Intel color control surfaces (CCS) for DG2 media compression.
@@ -642,6 +653,7 @@ extern "C" {
  * pitch is required to be a multiple of four Tile 4 widths.
  */
 #define I915_FORMAT_MOD_4_TILED_DG2_MC_CCS fourcc_mod_code(INTEL, 11)
+#define PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS intel_prelim_fourcc_mod_code(14)
 
 /*
  * Intel Color Control Surface with Clear Color (CCS) for DG2 render compression.
@@ -656,6 +668,7 @@ extern "C" {
  * for details.
  */
 #define I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC fourcc_mod_code(INTEL, 12)
+#define PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC intel_prelim_fourcc_mod_code(15)
 
 /*
  * Intel Color Control Surfaces (CCS) for display ver. 14 render compression.
