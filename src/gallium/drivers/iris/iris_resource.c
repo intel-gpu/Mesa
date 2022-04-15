@@ -107,10 +107,13 @@ modifier_is_supported(const struct intel_device_info *devinfo,
          return false;
       break;
    case I915_FORMAT_MOD_4_TILED:
+      if (devinfo->verx10 < 125)
+         return false;
+      break;
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
-      if (devinfo->verx10 < 125)
+      if (devinfo->verx10 < 125 || devinfo->prelim_drm)
          return false;
       break;
    case DRM_FORMAT_MOD_INVALID:
@@ -254,6 +257,8 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
 
    for (int i = 0; i < ARRAY_SIZE(all_modifiers); i++) {
       if (!modifier_is_supported(devinfo, pfmt, 0, all_modifiers[i]))
+         continue;
+      if (all_modifiers[i] == I915_FORMAT_MOD_4_TILED && devinfo->prelim_drm)
          continue;
 
       if (supported_mods < max) {
