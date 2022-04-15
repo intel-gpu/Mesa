@@ -148,6 +148,27 @@ isl_drm_modifier_info_list[] = {
       .supports_clear_color = true,
    },
    {
+      .modifier = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS,
+      .name = "PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS",
+      .tiling = ISL_TILING_4,
+      .aux_usage = ISL_AUX_USAGE_GFX12_CCS_E,
+      .supports_clear_color = false,
+   },
+   {
+      .modifier = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS,
+      .name = "PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS",
+      .tiling = ISL_TILING_4,
+      .aux_usage = ISL_AUX_USAGE_MC,
+      .supports_clear_color = false,
+   },
+   {
+      .modifier = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC,
+      .name = "PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC",
+      .tiling = ISL_TILING_4,
+      .aux_usage = ISL_AUX_USAGE_GFX12_CCS_E,
+      .supports_clear_color = true,
+   },
+   {
       .modifier = DRM_FORMAT_MOD_INVALID,
    },
 };
