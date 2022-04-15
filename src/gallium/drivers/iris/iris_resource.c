@@ -110,7 +110,7 @@ modifier_is_supported(const struct intel_device_info *devinfo,
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
-      if (devinfo->verx10 < 125)
+      if (devinfo->verx10 < 125 || iris_using_prelim_drm(screen->bufmgr))
          return false;
       break;
    case DRM_FORMAT_MOD_INVALID:
