@@ -65,6 +65,8 @@ enum modifier_priority {
    MODIFIER_PRIORITY_4,
    MODIFIER_PRIORITY_4_DG2_RC_CCS,
    MODIFIER_PRIORITY_4_DG2_RC_CCS_CC,
+   MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS,
+   MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC,
 };
 
 static const uint64_t priority_to_modifier[] = {
@@ -78,6 +80,8 @@ static const uint64_t priority_to_modifier[] = {
    [MODIFIER_PRIORITY_4] = I915_FORMAT_MOD_4_TILED,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
    [MODIFIER_PRIORITY_4_DG2_RC_CCS_CC] = I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+   [MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS] = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS,
+   [MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC] = PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC,
 };
 
 static bool
@@ -116,6 +120,12 @@ modifier_is_supported(const struct intel_device_info *devinfo,
       if (devinfo->verx10 < 125 || devinfo->prelim_drm)
          return false;
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+      if (devinfo->verx10 < 125 || !devinfo->prelim_drm)
+         return false;
+      break;
    case DRM_FORMAT_MOD_INVALID:
    default:
       return false;
@@ -123,6 +133,7 @@ modifier_is_supported(const struct intel_device_info *devinfo,
 
    /* Check remaining requirements. */
    switch (modifier) {
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
       if (INTEL_DEBUG(DEBUG_NO_CCS))
@@ -141,6 +152,8 @@ modifier_is_supported(const struct intel_device_info *devinfo,
          return false;
       }
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
@@ -179,6 +192,12 @@ select_best_modifier(struct intel_device_info *devinfo,
          continue;
 
       switch (modifiers[i]) {
+      case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
+         prio = MAX2(prio, MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS_CC);
+         break;
+      case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+         prio = MAX2(prio, MODIFIER_PRIORITY_PRELIM_F_DG2_RC_CCS);
+         break;
       case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
          prio = MAX2(prio, MODIFIER_PRIORITY_4_DG2_RC_CCS_CC);
          break;
@@ -246,6 +265,9 @@ iris_query_dmabuf_modifiers(struct pipe_screen *pscreen,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_MC_CCS,
       I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS,
+      PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC,
       I915_FORMAT_MOD_Y_TILED,
       I915_FORMAT_MOD_Y_TILED_CCS,
       I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS,
@@ -304,11 +326,14 @@ iris_get_dmabuf_modifier_planes(struct pipe_screen *pscreen, uint64_t modifier,
    switch (modifier) {
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       return 3;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_Y_TILED_GEN12_MC_CCS:
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS:
    case I915_FORMAT_MOD_Y_TILED_CCS:
       return 2 * planes;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    default:
@@ -1031,6 +1056,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
                           4096, IRIS_MEMZONE_OTHER, BO_ALLOC_ZEROED);
       }
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS:
       assert(num_main_planes == 1);
       assert(num_planes == 1);
@@ -1050,6 +1076,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
       r[0]->aux.clear_color_offset = r[2]->aux.clear_color_offset;
       r[0]->aux.clear_color_unknown = true;
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       assert(num_main_planes == 1);
       assert(num_planes == 2);
@@ -1073,6 +1100,7 @@ iris_resource_finish_aux_import(struct pipe_screen *pscreen,
       }
       assert(!isl_aux_usage_has_fast_clears(res->mod_info->aux_usage));
       break;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
       assert(!isl_aux_usage_has_fast_clears(res->mod_info->aux_usage));
       break;
@@ -1351,6 +1379,7 @@ mod_plane_is_clear_color(uint64_t modifier, uint32_t plane)
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 2;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 1;
