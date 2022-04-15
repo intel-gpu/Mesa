@@ -2361,6 +2361,7 @@ isl_drm_modifier_plane_is_clear_color(uint64_t modifier, uint32_t plane)
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 2;
+   case PRELIM_I915_FORMAT_MOD_F_TILED_DG2_RC_CCS_CC:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       assert(mod_info->supports_clear_color);
       return plane == 1;
