@@ -515,6 +515,8 @@ int iris_gem_set_tiling(struct iris_bo *bo, const struct isl_surf *surf);
 int iris_bo_export_dmabuf(struct iris_bo *bo, int *prime_fd);
 struct iris_bo *iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd);
 
+bool iris_using_prelim_drm(struct iris_bufmgr *bufmgr);
+
 /**
  * Exports a bo as a GEM handle into a given DRM file descriptor
  * \param bo Buffer to export
