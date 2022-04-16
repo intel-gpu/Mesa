@@ -1639,7 +1639,7 @@ decode_error::type Block::decode(const Decoder &decoder, InputBitVector in)
    return decode_error::ok;
 }
 
-void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
+void Block::write_decoded(const Decoder &decoder, OUT_TYPE * restrict output)
 {
    /* sRGB can only be stored as unorm8. */
    assert(!decoder.srgb || decoder.output_unorm8);
