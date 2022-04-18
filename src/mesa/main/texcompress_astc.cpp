@@ -540,13 +540,18 @@ class Decoder
 {
 public:
    Decoder(int block_w, int block_h, int block_d, bool srgb, bool output_unorm8)
-      : block_w(block_w), block_h(block_h), block_d(block_d), srgb(srgb),
-        output_unorm8(output_unorm8) {}
+      : block_w(block_w), block_h(block_h), block_d(block_d), srgb(srgb)
+   {
+      /* XXX: This is hardcoded (in the class) for better performance. */
+      assert(output_unorm8 == this->output_unorm8);
+   }
 
    decode_error::type decode(const uint8_t *in, uint16_t *output) const;
 
+   static const bool output_unorm8 = true;
+
    int block_w, block_h, block_d;
-   bool srgb, output_unorm8;
+   bool srgb;
 };
 
 struct Block
