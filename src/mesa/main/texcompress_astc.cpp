@@ -45,7 +45,7 @@ static bool VERBOSE_PERF = false;
 static bool VERBOSE_DECODE = false;
 static bool VERBOSE_WRITE = false;
 
-#define OUT_TYPE uint16_t
+#define OUT_TYPE uint32_t
 
 class decode_error
 {
@@ -1699,11 +1699,11 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
             }
 
             /* Interpolate to produce UNORM16, applying weights. */
-            uint16_t c[4] = {
-               (uint16_t)((c0[0] * (64 - w[0]) + c1[0] * w[0] + 32) >> 6),
-               (uint16_t)((c0[1] * (64 - w[1]) + c1[1] * w[1] + 32) >> 6),
-               (uint16_t)((c0[2] * (64 - w[2]) + c1[2] * w[2] + 32) >> 6),
-               (uint16_t)((c0[3] * (64 - w[3]) + c1[3] * w[3] + 32) >> 6),
+            int c[4] = {
+               (c0[0] * (64 - w[0]) + c1[0] * w[0] + 32) >> 6,
+               (c0[1] * (64 - w[1]) + c1[1] * w[1] + 32) >> 6,
+               (c0[2] * (64 - w[2]) + c1[2] * w[2] + 32) >> 6,
+               (c0[3] * (64 - w[3]) + c1[3] * w[3] + 32) >> 6,
             };
 
             if (decoder.output_unorm8) {
@@ -1713,6 +1713,10 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
                output[idx*4+3] = c[3] >> 8;
             } else {
                /* Store the color as FP16. */
+               c[0] &= 0xffff;
+               c[1] &= 0xffff;
+               c[2] &= 0xffff;
+               c[3] &= 0xffff;
                output[idx*4+0] = c[0] == 65535 ? FP16_ONE : _mesa_uint16_div_64k_to_half(c[0]);
                output[idx*4+1] = c[1] == 65535 ? FP16_ONE : _mesa_uint16_div_64k_to_half(c[1]);
                output[idx*4+2] = c[2] == 65535 ? FP16_ONE : _mesa_uint16_div_64k_to_half(c[2]);
