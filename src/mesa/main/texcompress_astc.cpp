@@ -617,7 +617,7 @@ struct Block
    uint8_t infill_weights[2][216]; /* large enough for 6x6x6 */
 
    /* Calculated by decode_colour_endpoints(); */
-   uint8x4_t endpoints_decoded[2][4];
+   uint16_t endpoints_decoded[2][4][4];
 
    void calculate_from_weights();
    void calculate_remaining_bits();
@@ -632,7 +632,7 @@ struct Block
    decode_error::type decode_void_extent(InputBitVector in);
    void decode_cem(InputBitVector in);
    void unpack_colour_endpoints(InputBitVector in);
-   void decode_colour_endpoints();
+   void decode_colour_endpoints(bool srgb);
    void unpack_weights(InputBitVector in);
    void compute_infill_weights(int block_w, int block_h, int block_d);
 
@@ -987,7 +987,7 @@ void Block::unpack_colour_endpoints(InputBitVector in)
    }
 }
 
-void Block::decode_colour_endpoints()
+void Block::decode_colour_endpoints(bool srgb)
 {
    int cem_values_idx = 0;
    for (int part = 0; part < num_parts; ++part) {
@@ -1091,8 +1091,29 @@ void Block::decode_colour_endpoints()
          break;
       }
 
-      endpoints_decoded[0][part] = e0;
-      endpoints_decoded[1][part] = e1;
+      /* Expand to 16 bits. */
+      if (srgb) {
+         endpoints_decoded[0][part][0] = e0.v[0] << 8 | 0x80;
+         endpoints_decoded[0][part][1] = e0.v[1] << 8 | 0x80;
+         endpoints_decoded[0][part][2] = e0.v[2] << 8 | 0x80;
+         endpoints_decoded[0][part][3] = e0.v[3] << 8 | 0x80;
+
+         endpoints_decoded[1][part][0] = e1.v[0] << 8 | 0x80;
+         endpoints_decoded[1][part][1] = e1.v[1] << 8 | 0x80;
+         endpoints_decoded[1][part][2] = e1.v[2] << 8 | 0x80;
+         endpoints_decoded[1][part][3] = e1.v[3] << 8 | 0x80;
+      } else {
+         endpoints_decoded[0][part][0] = e0.v[0] << 8 | e0.v[0];
+         endpoints_decoded[0][part][1] = e0.v[1] << 8 | e0.v[1];
+         endpoints_decoded[0][part][2] = e0.v[2] << 8 | e0.v[2];
+         endpoints_decoded[0][part][3] = e0.v[3] << 8 | e0.v[3];
+
+         endpoints_decoded[1][part][0] = e1.v[0] << 8 | e1.v[0];
+         endpoints_decoded[1][part][1] = e1.v[1] << 8 | e1.v[1];
+         endpoints_decoded[1][part][2] = e1.v[2] << 8 | e1.v[2];
+         endpoints_decoded[1][part][3] = e1.v[3] << 8 | e1.v[3];
+      }
+
 
       if (VERBOSE_DECODE) {
          printf("cems[%d]=%d v=[", part, cems[part]);
@@ -1524,7 +1545,7 @@ decode_error::type Block::decode(const Decoder &decoder, InputBitVector in)
       printf("]\n");
    }
 
-   decode_colour_endpoints();
+   decode_colour_endpoints(decoder.srgb);
 
    if (dual_plane) {
       int ccs_offset = 128 - weight_bits - num_extra_cem_bits - 2;
@@ -1643,32 +1664,17 @@ void Block::write_decoded(const Decoder &decoder, uint16_t *output)
 
             /* TODO: HDR */
 
-            uint8x4_t e0 = endpoints_decoded[0][partition];
-            uint8x4_t e1 = endpoints_decoded[1][partition];
             uint16_t c0[4], c1[4];
 
-            /* Expand to 16 bits. */
-            if (decoder.srgb) {
-               c0[0] = (uint16_t)((e0.v[0] << 8) | 0x80);
-               c0[1] = (uint16_t)((e0.v[1] << 8) | 0x80);
-               c0[2] = (uint16_t)((e0.v[2] << 8) | 0x80);
-               c0[3] = (uint16_t)((e0.v[3] << 8) | 0x80);
+            c0[0] = endpoints_decoded[0][partition][0];
+            c0[1] = endpoints_decoded[0][partition][1];
+            c0[2] = endpoints_decoded[0][partition][2];
+            c0[3] = endpoints_decoded[0][partition][3];
 
-               c1[0] = (uint16_t)((e1.v[0] << 8) | 0x80);
-               c1[1] = (uint16_t)((e1.v[1] << 8) | 0x80);
-               c1[2] = (uint16_t)((e1.v[2] << 8) | 0x80);
-               c1[3] = (uint16_t)((e1.v[3] << 8) | 0x80);
-            } else {
-               c0[0] = (uint16_t)((e0.v[0] << 8) | e0.v[0]);
-               c0[1] = (uint16_t)((e0.v[1] << 8) | e0.v[1]);
-               c0[2] = (uint16_t)((e0.v[2] << 8) | e0.v[2]);
-               c0[3] = (uint16_t)((e0.v[3] << 8) | e0.v[3]);
-
-               c1[0] = (uint16_t)((e1.v[0] << 8) | e1.v[0]);
-               c1[1] = (uint16_t)((e1.v[1] << 8) | e1.v[1]);
-               c1[2] = (uint16_t)((e1.v[2] << 8) | e1.v[2]);
-               c1[3] = (uint16_t)((e1.v[3] << 8) | e1.v[3]);
-            }
+            c1[0] = endpoints_decoded[1][partition][0];
+            c1[1] = endpoints_decoded[1][partition][1];
+            c1[2] = endpoints_decoded[1][partition][2];
+            c1[3] = endpoints_decoded[1][partition][3];
 
             int w[4];
             if (dual_plane) {
