@@ -275,69 +275,73 @@ static uint32_t hash52(uint32_t p)
    return p;
 }
 
-static int select_partition(int seed, int x, int y, int z, int partitioncount,
-                            int small_block)
+static void compute_seed_rnum(int partition_index, int partitioncount, int
+*seed, uint32_t *rnum)
+{
+   seed[0] = partition_index + (partitioncount - 1) * 1024;
+   *rnum = hash52(seed[0]);
+   seed[1] = *rnum & 0xF;
+   seed[2] = (*rnum >> 4) & 0xF;
+   seed[3] = (*rnum >> 8) & 0xF;
+   seed[4] = (*rnum >> 12) & 0xF;
+   seed[5] = (*rnum >> 16) & 0xF;
+   seed[6] = (*rnum >> 20) & 0xF;
+   seed[7] = (*rnum >> 24) & 0xF;
+   seed[8] = (*rnum >> 28) & 0xF;
+   seed[9] = (*rnum >> 18) & 0xF;
+   seed[10] = (*rnum >> 22) & 0xF;
+   seed[11] = (*rnum >> 26) & 0xF;
+   seed[12] = ((*rnum >> 30) | (*rnum << 2)) & 0xF;
+
+   seed[1] *= seed[1];
+   seed[2] *= seed[2];
+   seed[3] *= seed[3];
+   seed[4] *= seed[4];
+   seed[5] *= seed[5];
+   seed[6] *= seed[6];
+   seed[7] *= seed[7];
+   seed[8] *= seed[8];
+   seed[9] *= seed[9];
+   seed[10] *= seed[10];
+   seed[11] *= seed[11];
+   seed[12] *= seed[12];
+
+   int sh1, sh2, sh3;
+   if (seed[0] & 1) {
+      sh1 = (seed[0] & 2 ? 4 : 5);
+      sh2 = (partitioncount == 3 ? 6 : 5);
+   } else {
+      sh1 = (partitioncount == 3 ? 6 : 5);
+      sh2 = (seed[0] & 2 ? 4 : 5);
+   }
+   sh3 = (seed[0] & 0x10) ? sh1 : sh2;
+
+   seed[1] >>= sh1;
+   seed[2] >>= sh2;
+   seed[3] >>= sh1;
+   seed[4] >>= sh2;
+   seed[5] >>= sh1;
+   seed[6] >>= sh2;
+   seed[7] >>= sh1;
+   seed[8] >>= sh2;
+   seed[9] >>= sh3;
+   seed[10] >>= sh3;
+   seed[11] >>= sh3;
+   seed[12] >>= sh3;
+}
+
+static int select_partition(int *seed, int x, int y, int z, int partitioncount,
+                            int small_block, uint32_t rnum)
 {
    if (small_block) {
       x <<= 1;
       y <<= 1;
       z <<= 1;
    }
-   seed += (partitioncount - 1) * 1024;
-   uint32_t rnum = hash52(seed);
-   uint8_t seed1 = rnum & 0xF;
-   uint8_t seed2 = (rnum >> 4) & 0xF;
-   uint8_t seed3 = (rnum >> 8) & 0xF;
-   uint8_t seed4 = (rnum >> 12) & 0xF;
-   uint8_t seed5 = (rnum >> 16) & 0xF;
-   uint8_t seed6 = (rnum >> 20) & 0xF;
-   uint8_t seed7 = (rnum >> 24) & 0xF;
-   uint8_t seed8 = (rnum >> 28) & 0xF;
-   uint8_t seed9 = (rnum >> 18) & 0xF;
-   uint8_t seed10 = (rnum >> 22) & 0xF;
-   uint8_t seed11 = (rnum >> 26) & 0xF;
-   uint8_t seed12 = ((rnum >> 30) | (rnum << 2)) & 0xF;
-
-   seed1 *= seed1;
-   seed2 *= seed2;
-   seed3 *= seed3;
-   seed4 *= seed4;
-   seed5 *= seed5;
-   seed6 *= seed6;
-   seed7 *= seed7;
-   seed8 *= seed8;
-   seed9 *= seed9;
-   seed10 *= seed10;
-   seed11 *= seed11;
-   seed12 *= seed12;
-
-   int sh1, sh2, sh3;
-   if (seed & 1) {
-      sh1 = (seed & 2 ? 4 : 5);
-      sh2 = (partitioncount == 3 ? 6 : 5);
-   } else {
-      sh1 = (partitioncount == 3 ? 6 : 5);
-      sh2 = (seed & 2 ? 4 : 5);
-   }
-   sh3 = (seed & 0x10) ? sh1 : sh2;
-
-   seed1 >>= sh1;
-   seed2 >>= sh2;
-   seed3 >>= sh1;
-   seed4 >>= sh2;
-   seed5 >>= sh1;
-   seed6 >>= sh2;
-   seed7 >>= sh1;
-   seed8 >>= sh2;
-   seed9 >>= sh3;
-   seed10 >>= sh3;
-   seed11 >>= sh3;
-   seed12 >>= sh3;
-
-   int a = seed1 * x + seed2 * y + seed11 * z + (rnum >> 14);
-   int b = seed3 * x + seed4 * y + seed12 * z + (rnum >> 10);
-   int c = seed5 * x + seed6 * y + seed9 * z + (rnum >> 6);
-   int d = seed7 * x + seed8 * y + seed10 * z + (rnum >> 2);
+   int a = seed[1] * x + seed[2] * y + seed[11] * z + (rnum >> 14);
+   int b = seed[3] * x + seed[4] * y + seed[12] * z + (rnum >> 10);
+   int c = seed[5] * x + seed[6] * y + seed[9] * z + (rnum >> 6);
+   int d = seed[7] * x + seed[8] * y + seed[10] * z + (rnum >> 2);
 
    a &= 0x3F;
    b &= 0x3F;
@@ -1658,6 +1662,10 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
       return;
    }
 
+   int seed[13] = {};
+   uint32_t rnum;
+   compute_seed_rnum(partition_index, num_parts, seed, &rnum);
+
    int small_block = (decoder.block_w * decoder.block_h * decoder.block_d) < 31;
 
    int idx = 0;
@@ -1667,7 +1675,8 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
 
             int partition;
             if (num_parts > 1) {
-               partition = select_partition(partition_index, x, y, z, num_parts, small_block);
+               partition = select_partition(seed, x, y, z, num_parts,
+small_block, rnum);
                assert(partition < num_parts);
             } else {
                partition = 0;
