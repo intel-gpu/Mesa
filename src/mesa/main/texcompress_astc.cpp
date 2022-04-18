@@ -45,6 +45,8 @@ static bool VERBOSE_PERF = false;
 static bool VERBOSE_DECODE = false;
 static bool VERBOSE_WRITE = false;
 
+#define OUT_TYPE uint16_t
+
 class decode_error
 {
 public:
@@ -542,12 +544,14 @@ public:
    Decoder(int block_w, int block_h, int block_d, bool srgb, bool output_unorm8)
       : block_w(block_w), block_h(block_h), srgb(srgb)
    {
+      assert(output_unorm8 || sizeof(OUT_TYPE) >= 16);
+
       /* XXX: This is hardcoded (in the class) for better performance. */
       assert(output_unorm8 == this->output_unorm8);
       assert(block_d == this->block_d);
    }
 
-   decode_error::type decode(const uint8_t *in, uint16_t *output) const;
+   decode_error::type decode(const uint8_t *in, OUT_TYPE *output) const;
 
    static const bool output_unorm8 = true;
    static const int block_d = 1;
@@ -643,11 +647,11 @@ struct Block
    void unpack_weights(InputBitVector in);
    void compute_infill_weights(int block_w, int block_h, int block_d);
 
-   void write_decoded(const Decoder &decoder, uint16_t *output);
+   void write_decoded(const Decoder &decoder, OUT_TYPE *output);
 };
 
 
-decode_error::type Decoder::decode(const uint8_t *in, uint16_t *output) const
+decode_error::type Decoder::decode(const uint8_t *in, OUT_TYPE *output) const
 {
    Block blk;
    InputBitVector in_vec;
@@ -1631,7 +1635,7 @@ decode_error::type Block::decode(const Decoder &decoder, InputBitVector in)
    return decode_error::ok;
 }
 
-void Block::write_decoded(const Decoder &decoder, uint16_t *output)
+void Block::write_decoded(const Decoder &decoder, OUT_TYPE *output)
 {
    /* sRGB can only be stored as unorm8. */
    assert(!decoder.srgb || decoder.output_unorm8);
@@ -1848,7 +1852,7 @@ void *thread_work(void *data)
    for (unsigned y = 0; y < y_blocks; ++y) {
       for (unsigned x = 0; x < x_blocks; ++x) {
          /* Same size as the largest block. */
-         uint16_t block_out[12 * 12 * 4];
+         OUT_TYPE block_out[12 * 12 * 4];
 
          dec.decode(src_row + x * block_size, block_out);
 
@@ -1860,7 +1864,7 @@ void *thread_work(void *data)
             for (unsigned sub_x = 0; sub_x < dst_blk_w; ++sub_x) {
                uint8_t *dst = dst_row + sub_y * dst_stride +
                               (x * blk_w + sub_x) * 4;
-               const uint16_t *src = &block_out[(sub_y * blk_w + sub_x) * 4];
+               const OUT_TYPE *src = &block_out[(sub_y * blk_w + sub_x) * 4];
 
                dst[0] = src[0];
                dst[1] = src[1];
