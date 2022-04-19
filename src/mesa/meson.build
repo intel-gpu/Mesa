@@ -206,7 +206,6 @@ files_libmesa = files(
   'main/syncobj.h',
   'main/texcompress.c',
   'main/texcompress.h',
-  'main/texcompress_astc.cpp',
   'main/texcompress_astc.h',
   'main/texcompress_bptc.c',
   'main/texcompress_bptc.h',
@@ -462,8 +461,9 @@ files_libmesa += [
 if with_sse41
   libmesa_sse41 = static_library(
     'mesa_sse41',
-    files('main/sse_minmax.c'),
+    files('main/texcompress_astc.cpp', 'main/sse_minmax.c'),
     c_args : [c_msvc_compat_args, sse41_args],
+    cpp_args : [cpp_msvc_compat_args, sse41_args],
     include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
     gnu_symbol_visibility : 'hidden',
   )
