@@ -632,7 +632,7 @@ struct Block
    uint8_t infill_weights[2][216]; /* large enough for 6x6x6 */
 
    /* Calculated by decode_colour_endpoints(); */
-   uint32_t endpoints_decoded[2][4][4];
+   uint32_t endpoints_decoded[4][2][4] __attribute__((aligned(64)));
 
    void calculate_from_weights();
    void calculate_remaining_bits();
@@ -1108,25 +1108,25 @@ void Block::decode_colour_endpoints(bool srgb)
 
       /* Expand to 16 bits. */
       if (srgb) {
-         endpoints_decoded[0][part][0] = e0.v[0] << 8 | 0x80;
-         endpoints_decoded[0][part][1] = e0.v[1] << 8 | 0x80;
-         endpoints_decoded[0][part][2] = e0.v[2] << 8 | 0x80;
-         endpoints_decoded[0][part][3] = e0.v[3] << 8 | 0x80;
-
-         endpoints_decoded[1][part][0] = e1.v[0] << 8 | 0x80;
-         endpoints_decoded[1][part][1] = e1.v[1] << 8 | 0x80;
-         endpoints_decoded[1][part][2] = e1.v[2] << 8 | 0x80;
-         endpoints_decoded[1][part][3] = e1.v[3] << 8 | 0x80;
-      } else {
-         endpoints_decoded[0][part][0] = e0.v[0] << 8 | e0.v[0];
-         endpoints_decoded[0][part][1] = e0.v[1] << 8 | e0.v[1];
-         endpoints_decoded[0][part][2] = e0.v[2] << 8 | e0.v[2];
-         endpoints_decoded[0][part][3] = e0.v[3] << 8 | e0.v[3];
-
-         endpoints_decoded[1][part][0] = e1.v[0] << 8 | e1.v[0];
-         endpoints_decoded[1][part][1] = e1.v[1] << 8 | e1.v[1];
-         endpoints_decoded[1][part][2] = e1.v[2] << 8 | e1.v[2];
-         endpoints_decoded[1][part][3] = e1.v[3] << 8 | e1.v[3];
+         endpoints_decoded[part][0][0] = e0.v[0] << 8 | 0x80;
+         endpoints_decoded[part][0][1] = e0.v[1] << 8 | 0x80;
+         endpoints_decoded[part][0][2] = e0.v[2] << 8 | 0x80;
+         endpoints_decoded[part][0][3] = e0.v[3] << 8 | 0x80;
+                                   
+         endpoints_decoded[part][1][0] = e1.v[0] << 8 | 0x80;
+         endpoints_decoded[part][1][1] = e1.v[1] << 8 | 0x80;
+         endpoints_decoded[part][1][2] = e1.v[2] << 8 | 0x80;
+         endpoints_decoded[part][1][3] = e1.v[3] << 8 | 0x80;
+      } else {                     
+         endpoints_decoded[part][0][0] = e0.v[0] << 8 | e0.v[0];
+         endpoints_decoded[part][0][1] = e0.v[1] << 8 | e0.v[1];
+         endpoints_decoded[part][0][2] = e0.v[2] << 8 | e0.v[2];
+         endpoints_decoded[part][0][3] = e0.v[3] << 8 | e0.v[3];
+                                   
+         endpoints_decoded[part][1][0] = e1.v[0] << 8 | e1.v[0];
+         endpoints_decoded[part][1][1] = e1.v[1] << 8 | e1.v[1];
+         endpoints_decoded[part][1][2] = e1.v[2] << 8 | e1.v[2];
+         endpoints_decoded[part][1][3] = e1.v[3] << 8 | e1.v[3];
       }
 
 
@@ -1686,15 +1686,15 @@ small_block, rnum);
 
             int c0[4], c1[4];
 
-            c0[0] = endpoints_decoded[0][partition][0];
-            c0[1] = endpoints_decoded[0][partition][1];
-            c0[2] = endpoints_decoded[0][partition][2];
-            c0[3] = endpoints_decoded[0][partition][3];
+            c0[0] = endpoints_decoded[partition][0][0];
+            c0[1] = endpoints_decoded[partition][0][1];
+            c0[2] = endpoints_decoded[partition][0][2];
+            c0[3] = endpoints_decoded[partition][0][3];
 
-            c1[0] = endpoints_decoded[1][partition][0];
-            c1[1] = endpoints_decoded[1][partition][1];
-            c1[2] = endpoints_decoded[1][partition][2];
-            c1[3] = endpoints_decoded[1][partition][3];
+            c1[0] = endpoints_decoded[partition][1][0];
+            c1[1] = endpoints_decoded[partition][1][1];
+            c1[2] = endpoints_decoded[partition][1][2];
+            c1[3] = endpoints_decoded[partition][1][3];
 
             int w[4];
             if (dual_plane) {
