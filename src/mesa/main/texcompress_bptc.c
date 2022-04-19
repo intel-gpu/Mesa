@@ -33,6 +33,7 @@
 #include "texstore.h"
 #include "image.h"
 #include "mtypes.h"
+#include "state_tracker/st_context.h"
 
 static void
 fetch_bptc_rgb_float(const GLubyte *map,
@@ -122,9 +123,73 @@ _mesa_get_bptc_fetch_func(mesa_format format)
    }
 }
 
+static void
+thread_cleanup(void *data, void *gdata, int thread_index)
+{
+   free(data);
+}
+
+static void
+compress_bptc_threaded(struct util_queue *queue,
+                       int width, int height,
+                       const void *src, int src_rowstride,
+                       uint8_t *dst, int dst_rowstride,
+                       bool is_signed,
+                       void (*thread_work)(void *, void *, int))
+{
+   const bool VERBOSE_PERF = false;
+   int64_t start_time = VERBOSE_PERF ? os_time_get() : 0;
+
+   int y_blocks = DIV_ROUND_UP(height, BLOCK_SIZE);
+
+   /* Determine the number of row chunks we'd like to hand off to individual
+    * CPUs.
+    *
+    * We limit the smallest chunk height to four rows.
+    * TODO: Do more performance tuning.
+    */
+   int max_num_chunks = DIV_ROUND_UP(y_blocks, 4);
+   int nr_chunks = MIN2(max_num_chunks, queue->max_threads);
+
+   unsigned y = 0;
+   for (int chunk = 0; chunk < nr_chunks; chunk++) {
+      /* We want to distribute the work as evenly as possible. When a perfect
+       * distribution isn't possible, we choose to give the earlier threads
+       * slightly more work than the others to increase CPU utilization.
+       */
+      unsigned height_el = DIV_ROUND_UP(y_blocks - y, nr_chunks - chunk);
+
+      struct compressor_thread_data *t_data =
+         malloc(sizeof(struct compressor_thread_data));
+
+      *t_data = (struct compressor_thread_data) {
+         .width = width,
+         .height = MIN2(BLOCK_SIZE * height_el, height - y * BLOCK_SIZE),
+         .src = (uint8_t *) src + src_rowstride * BLOCK_SIZE * y,
+         .src_rowstride = src_rowstride,
+         .dst = dst + dst_rowstride * y,
+         .dst_rowstride = dst_rowstride,
+         .is_signed = is_signed,
+      };
+
+      util_queue_add_job(queue, t_data, NULL, thread_work, thread_cleanup,
+                         sizeof(*t_data));
+
+      y += height_el;
+   }
+
+   util_queue_finish(queue);
+
+   if (VERBOSE_PERF) {
+      fprintf(stderr, "BPTC compression finished in %" PRIi64 " us\n",
+              os_time_get() - start_time);
+   }
+}
+
 GLboolean
 _mesa_texstore_bptc_rgba_unorm(TEXSTORE_PARAMS)
 {
+   struct st_context *st = st_context(ctx);
    const GLubyte *pixels;
    const GLubyte *tempImage = NULL;
    int rowstride;
@@ -161,9 +226,10 @@ _mesa_texstore_bptc_rgba_unorm(TEXSTORE_PARAMS)
                                          srcFormat, srcType);
    }
 
-   compress_rgba_unorm(srcWidth, srcHeight,
-                       pixels, rowstride,
-                       dstSlices[0], dstRowStride);
+   compress_bptc_threaded(&st->codec_queue,
+                          srcWidth, srcHeight, pixels, rowstride,
+                          dstSlices[0], dstRowStride, false,
+                          compress_rgba_unorm_thread);
 
    free((void *) tempImage);
 
@@ -174,6 +240,7 @@ static GLboolean
 texstore_bptc_rgb_float(TEXSTORE_PARAMS,
                         bool is_signed)
 {
+   struct st_context *st = st_context(ctx);
    const float *pixels;
    const float *tempImage = NULL;
    int rowstride;
@@ -206,10 +273,10 @@ texstore_bptc_rgb_float(TEXSTORE_PARAMS,
                                          srcFormat, srcType);
    }
 
-   compress_rgb_float(srcWidth, srcHeight,
-                      pixels, rowstride,
-                      dstSlices[0], dstRowStride,
-                      is_signed);
+   compress_bptc_threaded(&st->codec_queue,
+                          srcWidth, srcHeight, pixels, rowstride,
+                          dstSlices[0], dstRowStride, is_signed,
+                          compress_rgb_float_thread);
 
    free((void *) tempImage);
 
