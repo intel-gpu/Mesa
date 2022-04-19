@@ -632,7 +632,7 @@ struct Block
    uint8_t infill_weights[2][216]; /* large enough for 6x6x6 */
 
    /* Calculated by decode_colour_endpoints(); */
-   uint16_t endpoints_decoded[2][4][4];
+   uint32_t endpoints_decoded[2][4][4];
 
    void calculate_from_weights();
    void calculate_remaining_bits();
@@ -1684,7 +1684,7 @@ small_block, rnum);
 
             /* TODO: HDR */
 
-            uint16_t c0[4], c1[4];
+            int c0[4], c1[4];
 
             c0[0] = endpoints_decoded[0][partition][0];
             c0[1] = endpoints_decoded[0][partition][1];
