@@ -1857,4 +1857,32 @@ compress_rgb_float(int width, int height,
    }
 }
 
+struct compressor_thread_data {
+   uint8_t *dst;
+   const void *src;
+   unsigned dst_rowstride;
+   unsigned src_rowstride;
+   unsigned width;
+   unsigned height;
+   bool is_signed; /* for float only */
+};
+
+static void
+compress_rgba_unorm_thread(void *data, void *gdata, int thread_index)
+{
+   struct compressor_thread_data *t = data;
+
+   compress_rgba_unorm(t->width, t->height, t->src, t->src_rowstride,
+                       t->dst, t->dst_rowstride);
+}
+
+static void
+compress_rgb_float_thread(void *data, void *gdata, int thread_index)
+{
+   struct compressor_thread_data *t = data;
+
+   compress_rgb_float(t->width, t->height, t->src, t->src_rowstride,
+                      t->dst, t->dst_rowstride, t->is_signed);
+}
+
 #endif
