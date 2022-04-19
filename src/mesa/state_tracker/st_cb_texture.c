@@ -2974,6 +2974,7 @@ st_finalize_texture(struct gl_context *ctx,
       st_compressed_format_fallback(st, firstImage->TexFormat);
    bool transcoding = false;
    void *uncompressed_data[MAX_FACES][MAX_TEXTURE_LEVELS];
+   int64_t time_start = 0;
 
    // XXX: also need to only do this once...or expand...or something
    if (compressed_fallback) {
@@ -2986,7 +2987,8 @@ st_finalize_texture(struct gl_context *ctx,
 
       bool opaque = true;
 
-      int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
+      if (VERBOSE_PERF)
+         time_start = os_time_get();
 
       for (face = 0; face < nr_faces; face++) {
          for (unsigned level = tObj->Attrib.BaseLevel;
@@ -3060,7 +3062,7 @@ st_finalize_texture(struct gl_context *ctx,
       util_queue_finish(&st->codec_queue);
 
       if (VERBOSE_PERF) {
-         printf("Unpack done in %ldus\n\n", (long) (os_time_get() - unpack_start));
+         printf("Unpack done in %ldus\n\n", (long) (os_time_get() - time_start));
       }
 
       if (VERBOSE_ALPHA) {
@@ -3096,6 +3098,9 @@ st_finalize_texture(struct gl_context *ctx,
          return GL_FALSE;
       }
    }
+
+   if (VERBOSE_PERF)
+      time_start = os_time_get();
 
    /* Pull in any images not in the object's texture:
     */
@@ -3158,6 +3163,9 @@ st_finalize_texture(struct gl_context *ctx,
          }
       }
    }
+
+   if (VERBOSE_PERF && compressed_fallback)
+      printf("Pack done in %ldus\n\n", (long) (os_time_get() - time_start));
 
    tObj->validated_first_level = tObj->Attrib.BaseLevel;
    tObj->validated_last_level = tObj->lastLevel;
