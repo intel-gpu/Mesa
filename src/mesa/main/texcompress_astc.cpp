@@ -650,7 +650,7 @@ struct Block
    uint8_t infill_weights[2][216]; /* large enough for 6x6x6 */
 
    /* Calculated by decode_colour_endpoints(); */
-   uint32_t endpoints_decoded[4][2][4] __attribute__((aligned(64)));
+   uint16_t endpoints_decoded[4][2][4] __attribute__((aligned(64)));
 
    void calculate_from_weights();
    void calculate_remaining_bits();
