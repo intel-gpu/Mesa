@@ -278,6 +278,9 @@ static uint32_t hash52(uint32_t p)
 static void compute_seed_rnum(int partition_index, int partitioncount, int
 *seed, uint32_t *rnum)
 {
+   if (partitioncount == 1)
+      return;
+
    seed[0] = partition_index + (partitioncount - 1) * 1024;
    *rnum = hash52(seed[0]);
    seed[1] = *rnum & 0xF;
