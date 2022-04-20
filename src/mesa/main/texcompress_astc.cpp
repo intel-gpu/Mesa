@@ -276,25 +276,25 @@ static uint32_t hash52(uint32_t p)
 }
 
 static void compute_seed_rnum(int partition_index, int partitioncount, 
-                              bool small_block, int *seed, uint32_t *rnum)
+                              bool small_block, int *seed, uint32_t *rnum_out)
 {
    if (partitioncount == 1)
       return;
 
    seed[0] = partition_index + (partitioncount - 1) * 1024;
-   *rnum = hash52(seed[0]);
-   seed[1] = *rnum & 0xF;
-   seed[2] = (*rnum >> 4) & 0xF;
-   seed[3] = (*rnum >> 8) & 0xF;
-   seed[4] = (*rnum >> 12) & 0xF;
-   seed[5] = (*rnum >> 16) & 0xF;
-   seed[6] = (*rnum >> 20) & 0xF;
-   seed[7] = (*rnum >> 24) & 0xF;
-   seed[8] = (*rnum >> 28) & 0xF;
-   seed[9] = (*rnum >> 18) & 0xF;
-   seed[10] = (*rnum >> 22) & 0xF;
-   seed[11] = (*rnum >> 26) & 0xF;
-   seed[12] = ((*rnum >> 30) | (*rnum << 2)) & 0xF;
+   uint32_t rnum = hash52(seed[0]);
+   seed[1] = rnum & 0xF;
+   seed[2] = (rnum >> 4) & 0xF;
+   seed[3] = (rnum >> 8) & 0xF;
+   seed[4] = (rnum >> 12) & 0xF;
+   seed[5] = (rnum >> 16) & 0xF;
+   seed[6] = (rnum >> 20) & 0xF;
+   seed[7] = (rnum >> 24) & 0xF;
+   seed[8] = (rnum >> 28) & 0xF;
+   seed[9] = (rnum >> 18) & 0xF;
+   seed[10] = (rnum >> 22) & 0xF;
+   seed[11] = (rnum >> 26) & 0xF;
+   seed[12] = ((rnum >> 30) | (rnum << 2)) & 0xF;
 
    seed[1] *= seed[1];
    seed[2] *= seed[2];
@@ -346,15 +346,20 @@ static void compute_seed_rnum(int partition_index, int partitioncount,
       seed[11]<<=1;
       seed[12]<<=1;
    }
+
+   rnum_out[0] = rnum >> 14;
+   rnum_out[1] = rnum >> 10;
+   rnum_out[2] = rnum >> 6;
+   rnum_out[3] = rnum >> 2;
 }
 
 static int select_partition(int *seed, int x, int y, int z, int partitioncount,
-                            uint32_t rnum)
+                            uint32_t *rnum)
 {
-   int a = seed[1] * x + seed[2] * y + seed[11] * z + (rnum >> 14);
-   int b = seed[3] * x + seed[4] * y + seed[12] * z + (rnum >> 10);
-   int c = seed[5] * x + seed[6] * y + seed[9] * z + (rnum >> 6);
-   int d = seed[7] * x + seed[8] * y + seed[10] * z + (rnum >> 2);
+   int a = seed[1] * x + seed[2] * y + seed[11] * z + rnum[0];
+   int b = seed[3] * x + seed[4] * y + seed[12] * z + rnum[1];
+   int c = seed[5] * x + seed[6] * y + seed[9]  * z + rnum[2];
+   int d = seed[7] * x + seed[8] * y + seed[10] * z + rnum[3];
 
    a &= 0x3F;
    b &= 0x3F;
@@ -1676,9 +1681,9 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE * restrict output)
    }
 
    int seed[13] = {};
-   uint32_t rnum;
+   uint32_t rnum[4] = {};
    int small_block = decoder.block_w * decoder.block_h * decoder.block_d < 31;
-   compute_seed_rnum(partition_index, num_parts, small_block, seed, &rnum);
+   compute_seed_rnum(partition_index, num_parts, small_block, seed, rnum);
 
 
    int idx = 0;
