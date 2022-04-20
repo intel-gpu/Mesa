@@ -275,8 +275,8 @@ static uint32_t hash52(uint32_t p)
    return p;
 }
 
-static void compute_seed_rnum(int partition_index, int partitioncount, int
-*seed, uint32_t *rnum)
+static void compute_seed_rnum(int partition_index, int partitioncount, 
+                              bool small_block, int *seed, uint32_t *rnum)
 {
    if (partitioncount == 1)
       return;
@@ -331,16 +331,26 @@ static void compute_seed_rnum(int partition_index, int partitioncount, int
    seed[10] >>= sh3;
    seed[11] >>= sh3;
    seed[12] >>= sh3;
+
+   if (small_block) {
+      seed[1] <<=1;
+      seed[2] <<=1;
+      seed[3] <<=1;
+      seed[4] <<=1;
+      seed[5] <<=1;
+      seed[6] <<=1;
+      seed[7] <<=1;
+      seed[8] <<=1;
+      seed[9] <<=1;
+      seed[10]<<=1;
+      seed[11]<<=1;
+      seed[12]<<=1;
+   }
 }
 
 static int select_partition(int *seed, int x, int y, int z, int partitioncount,
-                            int small_block, uint32_t rnum)
+                            uint32_t rnum)
 {
-   if (small_block) {
-      x <<= 1;
-      y <<= 1;
-      z <<= 1;
-   }
    int a = seed[1] * x + seed[2] * y + seed[11] * z + (rnum >> 14);
    int b = seed[3] * x + seed[4] * y + seed[12] * z + (rnum >> 10);
    int c = seed[5] * x + seed[6] * y + seed[9] * z + (rnum >> 6);
@@ -1667,9 +1677,9 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE * restrict output)
 
    int seed[13] = {};
    uint32_t rnum;
-   compute_seed_rnum(partition_index, num_parts, seed, &rnum);
+   int small_block = decoder.block_w * decoder.block_h * decoder.block_d < 31;
+   compute_seed_rnum(partition_index, num_parts, small_block, seed, &rnum);
 
-   int small_block = (decoder.block_w * decoder.block_h * decoder.block_d) < 31;
 
    int idx = 0;
    for (int z = 0; z < decoder.block_d; ++z) {
@@ -1678,8 +1688,7 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE * restrict output)
 
             int partition;
             if (num_parts > 1) {
-               partition = select_partition(seed, x, y, z, num_parts,
-small_block, rnum);
+               partition = select_partition(seed, x, y, z, num_parts, rnum);
                assert(partition < num_parts);
             } else {
                partition = 0;
