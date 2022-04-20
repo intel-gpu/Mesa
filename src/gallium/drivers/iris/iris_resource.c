@@ -2634,8 +2634,8 @@ iris_transfer_map(struct pipe_context *ctx,
    if (prefer_cpu_access(res, box, usage, level, map_would_stall))
       usage |= PIPE_MAP_DIRECTLY;
 
-   /* TODO: Teach iris_map_tiled_memcpy about Tile4 and Tile64... */
-   if (res->surf.tiling == ISL_TILING_4 || res->surf.tiling == ISL_TILING_64)
+   /* TODO: Teach iris_map_tiled_memcpy about Tile64... */
+   if (res->surf.tiling == ISL_TILING_64)
       usage &= ~PIPE_MAP_DIRECTLY;
 
    if (!(usage & PIPE_MAP_DIRECTLY)) {
