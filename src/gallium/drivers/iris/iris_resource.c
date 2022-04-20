@@ -2465,10 +2465,6 @@ iris_transfer_map(struct pipe_context *ctx,
       }
    }
 
-   /* TODO: Teach iris_map_tiled_memcpy about Tile4... */
-   if (res->surf.tiling == ISL_TILING_4)
-      usage &= ~PIPE_MAP_DIRECTLY;
-
    if (!(usage & PIPE_MAP_DIRECTLY)) {
       /* If we need a synchronous mapping and the resource is busy, or needs
        * resolving, we copy to/from a linear temporary buffer using the GPU.
