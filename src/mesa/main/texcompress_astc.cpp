@@ -1685,33 +1685,38 @@ void Block::write_decoded(const Decoder &decoder, OUT_TYPE * restrict output)
    int small_block = decoder.block_w * decoder.block_h * decoder.block_d < 31;
    compute_seed_rnum(partition_index, num_parts, small_block, seed, rnum);
 
+   int c0[4], c1[4];
+   c0[0] = endpoints_decoded[0][0][0];
+   c0[1] = endpoints_decoded[0][0][1];
+   c0[2] = endpoints_decoded[0][0][2];
+   c0[3] = endpoints_decoded[0][0][3];
+
+   c1[0] = endpoints_decoded[0][1][0];
+   c1[1] = endpoints_decoded[0][1][1];
+   c1[2] = endpoints_decoded[0][1][2];
+   c1[3] = endpoints_decoded[0][1][3];
 
    int idx = 0;
    for (int z = 0; z < decoder.block_d; ++z) {
       for (int y = 0; y < decoder.block_h; ++y) {
          for (int x = 0; x < decoder.block_w; ++x) {
 
-            int partition;
             if (num_parts > 1) {
-               partition = select_partition(seed, x, y, z, num_parts, rnum);
+               int partition = select_partition(seed, x, y, z, num_parts,
+                                                rnum);
                assert(partition < num_parts);
-            } else {
-               partition = 0;
+               c0[0] = endpoints_decoded[partition][0][0];
+               c0[1] = endpoints_decoded[partition][0][1];
+               c0[2] = endpoints_decoded[partition][0][2];
+               c0[3] = endpoints_decoded[partition][0][3];
+
+               c1[0] = endpoints_decoded[partition][1][0];
+               c1[1] = endpoints_decoded[partition][1][1];
+               c1[2] = endpoints_decoded[partition][1][2];
+               c1[3] = endpoints_decoded[partition][1][3];
             }
 
             /* TODO: HDR */
-
-            int c0[4], c1[4];
-
-            c0[0] = endpoints_decoded[partition][0][0];
-            c0[1] = endpoints_decoded[partition][0][1];
-            c0[2] = endpoints_decoded[partition][0][2];
-            c0[3] = endpoints_decoded[partition][0][3];
-
-            c1[0] = endpoints_decoded[partition][1][0];
-            c1[1] = endpoints_decoded[partition][1][1];
-            c1[2] = endpoints_decoded[partition][1][2];
-            c1[3] = endpoints_decoded[partition][1][3];
 
             int w[4];
             if (dual_plane) {
