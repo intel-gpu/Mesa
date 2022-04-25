@@ -1860,6 +1860,7 @@ struct thread_data {
    unsigned src_width;
    unsigned src_height;
    mesa_format format;
+   bool *has_alpha;
 };
 void thread_cleanup(void *data /* *job*/, void *gdata, int thread_index)
 {
@@ -1910,6 +1911,10 @@ void thread_work(void *data /* *job*/, void *gdata, int thread_index)
                dst[1] = src[1];
                dst[2] = src[2];
                dst[3] = src[3];
+
+               //TODO report 1-bit alpha
+               if (src[3] < 255)
+                  *t_data->has_alpha = true;
             }
          }
       }
@@ -1917,9 +1922,10 @@ void thread_work(void *data /* *job*/, void *gdata, int thread_index)
       dst_row += dst_stride * blk_h;
    }
 
-   if (VERBOSE_PERF)
-      printf("\tFinished unpack with height %d\n", src_height);
-
+   if (VERBOSE_PERF) {
+      printf("\tFinished unpack with height %d. %salpha found.\n",
+             src_height, *t_data->has_alpha ? "" : "no ");
+   }
 }
 
 /**
@@ -1937,7 +1943,8 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_width,
                          unsigned src_height,
                          mesa_format format,
-                         struct util_queue *queue)
+                         struct util_queue *queue,
+                         bool *has_alpha)
 {
    int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
 
@@ -1978,6 +1985,7 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
          .src_width = src_width,
          .src_height = MIN2(blk_h * height_el, src_height - y * blk_h),
          .format = format,
+         .has_alpha = has_alpha,
       };
 
       if (VERBOSE_PERF) {
