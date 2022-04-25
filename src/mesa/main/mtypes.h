@@ -812,6 +812,7 @@ struct gl_texture_image
     * as well as image copies.
     */
    struct st_compressed_data* compressed_data;
+   bool has_alpha;
 };
 
 
