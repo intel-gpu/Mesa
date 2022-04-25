@@ -176,21 +176,27 @@ isl_gfx125_choose_image_alignment_el(const struct isl_device *dev,
       *image_align_el = tiling == ISL_TILING_LINEAR ?
          isl_extent3d(128, 4, 1) :
          isl_extent3d(16, 4, 1);
-   } else {
+   } else if (isl_format_supports_ccs_e(dev->info, info->format) ||
+              tiling == ISL_TILING_LINEAR) {
       /* From RENDER_SURFACE_STATE::SurfaceHorizontalAlignment,
        *
        *    - Losslessly Compressed Surfaces Must be HALIGN=128 for all
        *      supported Bpp
-       *    - 64bpe and 128bpe Surfaces Must Be HALIGN=64Bytes or 128Bytes (4,
-       *      8 texels or 16 texels)
        *    - Linear Surfaces surfaces must use HALIGN=128, including 1D which
        *      is always Linear.
-       *
-       * Even though we could choose a horizontal alignment of 64B for certain
-       * 64 and 128-bit formats, we want to be able to enable CCS whenever
-       * possible and CCS requires 128B horizontal alignment.
        */
       *image_align_el = isl_extent3d(128 * 8 / fmtl->bpb, 4, 1);
+   } else if (fmtl->bpb >= 64) {
+      assert(fmtl->bpb == 64 || fmtl->bpb == 128);
+      /* From RENDER_SURFACE_STATE::SurfaceHorizontalAlignment,
+       *
+       *    - 64bpe and 128bpe Surfaces Must Be HALIGN=64Bytes or 128Bytes (4,
+       *      8 texels or 16 texels)
+       */
+      *image_align_el = isl_extent3d(64 * 8 / fmtl->bpb, 4, 1);
+   } else {
+      /* No restrictions remain. Choose the smallest alignment possible. */
+      *image_align_el = isl_extent3d(16 * 8 / fmtl->bpb, 4, 1);
    }
 }
 
