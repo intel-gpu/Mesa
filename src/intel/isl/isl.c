@@ -637,6 +637,7 @@ isl_surf_choose_tiling(const struct isl_device *dev,
                        const struct isl_surf_init_info *restrict info,
                        enum isl_tiling *tiling)
 {
+   const struct isl_format_layout *fmtl = isl_format_get_layout(info->format);
    isl_tiling_flags_t tiling_flags = info->tiling_flags;
 
    /* HiZ surfaces always use the HiZ tiling */
@@ -684,6 +685,19 @@ isl_surf_choose_tiling(const struct isl_device *dev,
        * tiling. To the contrary, tiling leads to wasted memory and poor
        * memory locality due to the swizzling and alignment restrictions
        * required in tiled surfaces.
+       */
+      CHOOSE(ISL_TILING_LINEAR);
+   }
+
+   const uint32_t slice0_size_B =
+       isl_align_div_npot(info->width, fmtl->bw) *
+       isl_align_div_npot(info->height, fmtl->bh) *  fmtl->bpb / 8;
+
+   if (info->levels == 1 && info->array_len == 1 &&
+       info->row_pitch_B <= 64 && slice0_size_B <= 64) {
+      /* Prefer linear for surfaces that fit within a cacheline. For this
+       * size, there should be no benefit to using tiling. See the reasons
+       * listed above for more.
        */
       CHOOSE(ISL_TILING_LINEAR);
    }
