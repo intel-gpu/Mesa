@@ -1892,9 +1892,11 @@ isl_surf_init_s(const struct isl_device *dev,
        *
        *     "For Linear memory, this field specifies the stride in chunks of
        *     64 bytes (1 cache line)."
+       *
+       * From the performance section:
+       *    TODO:
        */
-      if (isl_surf_usage_is_display(info->usage))
-         base_alignment_B = MAX(base_alignment_B, 64);
+      base_alignment_B = MAX(base_alignment_B, 64);
    } else {
       /* Pitches must make sense with the tiling */
       assert(row_pitch_B % tile_info.phys_extent_B.width == 0);
