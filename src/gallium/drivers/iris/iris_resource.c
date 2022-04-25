@@ -1228,9 +1228,9 @@ iris_resource_create_with_modifiers(struct pipe_screen *pscreen,
                 iris_get_aux_clear_color_state_size(screen, res);
    }
 
-   uint32_t alignment = MAX2(4096, res->surf.alignment_B);
    res->bo =
-      iris_bo_alloc(screen->bufmgr, name, bo_size, alignment, memzone, flags);
+      iris_bo_alloc(screen->bufmgr, name, bo_size, res->surf.alignment_B,
+                    memzone, flags);
 
    if (!res->bo)
       goto fail;
