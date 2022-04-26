@@ -68,7 +68,8 @@ main(int argc, char *argv[])
          continue;
 
       if (print_hwconfig) {
-         intel_get_and_print_hwconfig_table(fd);
+         if (!intel_get_and_print_hwconfig_table(fd))
+            fprintf(stdout, "invalid hwconfig blob format!\n");
       }
 
       bool success = intel_get_device_info_from_fd(fd, &devinfo);
