@@ -259,8 +259,10 @@ main(int argc, char *argv[])
 
          print_base_devinfo(&devinfo);
          print_regions_info(&devinfo);
-         if (print_hwconfig)
-            intel_get_and_print_hwconfig_table(fd, &devinfo);
+         if (print_hwconfig) {
+            if (!intel_get_and_print_hwconfig_table(fd, &devinfo))
+               fprintf(stdout, "invalid hwconfig blob format!\n");
+         }
          if (print_workarounds)
             print_wa_info(&devinfo);
       }
