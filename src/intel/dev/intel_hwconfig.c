@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -130,26 +131,40 @@ key_to_name(uint32_t key)
 typedef void (*hwconfig_item_cb)(struct intel_device_info *devinfo,
                                  const struct hwconfig *item);
 
-static void
+static bool
 intel_process_hwconfig_table(struct intel_device_info *devinfo,
                              const struct hwconfig *hwconfig,
                              int32_t hwconfig_len,
                              hwconfig_item_cb item_callback_func)
 {
-   assert(hwconfig);
-   assert(hwconfig_len % 4 == 0);
+   if (!hwconfig || hwconfig_len % 4 != 0)
+      return false;
+
+   uint64_t offset = 0;
+   uint64_t remaining = hwconfig_len;
+   uint64_t min_item_size = offsetof(struct hwconfig, val);
+   uint64_t item_size;
    const struct hwconfig *current = hwconfig;
-   const struct hwconfig *end =
-      (struct hwconfig*)(((uint32_t*)hwconfig) + (hwconfig_len / 4));
-   while (current < end) {
-      assert(current + 1 < end);
-      struct hwconfig *next =
-         (struct hwconfig*)((uint32_t*)current + 2 + current->len);
-      assert(next <= end);
-      item_callback_func(devinfo, current);
-      current = next;
+
+   while (offset < hwconfig_len) {
+      if (remaining < min_item_size)
+         return false;
+      item_size = min_item_size + sizeof(uint32_t) * current->len;
+      if (item_size > remaining)
+         return false;
+
+      if (item_callback_func)
+         item_callback_func(devinfo, current);
+
+      offset += item_size;
+      remaining -= item_size;
+      current = (void *)&current->val[current->len];
    }
-   assert(current == end);
+
+   if (remaining != 0)
+      return false;
+
+   return true;
 }
 
 /* If devinfo->apply_hwconfig is true, then we apply the hwconfig value.
@@ -272,33 +287,41 @@ apply_hwconfig_item(struct intel_device_info *devinfo,
    }
 }
 
-static void
+static bool
 intel_apply_hwconfig_table(struct intel_device_info *devinfo,
                            const struct hwconfig *hwconfig,
                            int32_t hwconfig_len)
 {
-   intel_process_hwconfig_table(devinfo, hwconfig, hwconfig_len,
-                                apply_hwconfig_item);
+   if (!intel_process_hwconfig_table(devinfo, hwconfig, hwconfig_len,
+                                     apply_hwconfig_item)) {
+      return false;
+   }
 
    /* After applying hwconfig values, some items need to be recalculated. */
    if (devinfo->apply_hwconfig) {
       devinfo->max_cs_threads =
          devinfo->max_eus_per_subslice * devinfo->num_thread_per_eu;
    }
+
+   return true;
 }
 
-void
+bool
 intel_get_and_process_hwconfig_table(int fd,
                                      struct intel_device_info *devinfo)
 {
    struct hwconfig *hwconfig;
    int32_t hwconfig_len = 0;
+   bool result = true;
+
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
    if (hwconfig) {
-      intel_apply_hwconfig_table(devinfo, hwconfig, hwconfig_len);
+      result = intel_apply_hwconfig_table(devinfo, hwconfig, hwconfig_len);
       free(hwconfig);
    }
+
+   return result;
 }
 
 static void
@@ -312,23 +335,27 @@ print_hwconfig_item(struct intel_device_info *devinfo,
    printf("\n");
 }
 
-static void
+static bool
 intel_print_hwconfig_table(const struct hwconfig *hwconfig,
                            int32_t hwconfig_len)
 {
-   intel_process_hwconfig_table(NULL, hwconfig, hwconfig_len,
-                                print_hwconfig_item);
+   return intel_process_hwconfig_table(NULL, hwconfig, hwconfig_len,
+                                       print_hwconfig_item);
 }
 
-void
+bool
 intel_get_and_print_hwconfig_table(int fd)
 {
    struct hwconfig *hwconfig;
    int32_t hwconfig_len = 0;
+   bool result = true;
+
    hwconfig = intel_i915_query_alloc(fd, DRM_I915_QUERY_HWCONFIG_BLOB,
                                      &hwconfig_len);
    if (hwconfig) {
-      intel_print_hwconfig_table(hwconfig, hwconfig_len);
+      result = intel_print_hwconfig_table(hwconfig, hwconfig_len);
       free(hwconfig);
    }
+
+   return result;
 }

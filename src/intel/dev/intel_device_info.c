@@ -1879,7 +1879,8 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
       return true;
    }
 
-   intel_get_and_process_hwconfig_table(fd, devinfo);
+   if (!intel_get_and_process_hwconfig_table(fd, devinfo))
+      return false;
 
    int timestamp_frequency;
    if (getparam(fd, I915_PARAM_CS_TIMESTAMP_FREQUENCY,
