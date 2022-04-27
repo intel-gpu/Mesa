@@ -622,10 +622,10 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
    }
 #endif
 
-   if (cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_DYNAMIC_SAMPLE_LOCATIONS) {
+   if (pipeline->base.device->vk.enabled_extensions.EXT_sample_locations &&
+       cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_DYNAMIC_SAMPLE_LOCATIONS) {
       genX(emit_sample_pattern)(&cmd_buffer->batch,
-                                pipeline->rasterization_samples,
-                                d->sample_locations.locations);
+                                pipeline->rasterization_samples, d);
    }
 
    if (cmd_buffer->state.gfx.dirty & (ANV_CMD_DIRTY_PIPELINE |
