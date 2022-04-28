@@ -1068,6 +1068,10 @@ lower_sampler_logical_send_gfx7(const fs_builder &bld, fs_inst *inst, opcode op,
       }
 
       bld.MOV(sources[length++], min_lod);
+
+      /* Wa_14014595444: Populate MLOD as parameter 5 (twice). */
+      if (intel_device_info_is_dg2(devinfo) && op == FS_OPCODE_TXB)
+         bld.MOV(sources[length++], min_lod);
    }
 
    const fs_reg src_payload =
