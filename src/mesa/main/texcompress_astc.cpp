@@ -37,6 +37,7 @@
 #include "macros.h"
 #include "util/half_float.h"
 #include "util/os_time.h"
+#include "util/u_queue.h"
 #include <stdio.h>
 #include <cstdlib>  // for abort() on windows
 #include <pthread.h>
@@ -1861,7 +1862,7 @@ struct thread_data {
    mesa_format format;
 };
 
-void *thread_work(void *data)
+void thread_work(void *data /* *job*/, void *gdata, int thread_index)
 {
    struct thread_data *t_data = (struct thread_data *) data;
    uint8_t *dst_row = t_data->dst_row;
@@ -1915,7 +1916,6 @@ void *thread_work(void *data)
    if (VERBOSE_PERF)
       printf("\tFinished unpack with height %d\n", src_height);
 
-   return NULL;
 }
 
 /**
@@ -1934,7 +1934,6 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_height,
                          mesa_format format)
 {
-   int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
 
    unsigned blk_w, blk_h;
    _mesa_get_format_block_size(format, &blk_w, &blk_h);
@@ -1964,8 +1963,17 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
     * wait for the others.
     */
    int nr_pthreads = nr_chunks - 1;
-   pthread_t *tids = (pthread_t*)malloc(sizeof(pthread_t) * nr_pthreads);
 
+
+   struct util_queue queue;
+   if (!util_queue_init(&queue, "astc_unpack",
+                     max_num_chunks - 1,
+                     nr_pthreads,
+                     0,
+                     NULL /* global_data */)) {
+      printf("queue init failed\n");
+   }
+   int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
    unsigned y = 0;
    for (int chunk = 0; chunk < nr_chunks; chunk++) {
 
@@ -1994,11 +2002,13 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
       }
 
       if (chunk < nr_pthreads) {
-         pthread_create(&tids[chunk], NULL, thread_work, &t_data[chunk]);
+         util_queue_add_job(&queue, &t_data[chunk], NULL, thread_work, NULL,
+                            sizeof(t_data[chunk]));
+
       } else {
          int64_t exec_start = VERBOSE_PERF ? os_time_get() : 0;
 
-         thread_work(&t_data[chunk]);
+         thread_work(&t_data[chunk], NULL, -1);
 
          if (VERBOSE_PERF)
             printf("Executed for %ldus\n", os_time_get() - exec_start);
@@ -2014,19 +2024,19 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
          wait_start = os_time_get();
       }
 
-      for (int t = 0; t < nr_pthreads; ++t)
-         pthread_join(tids[t], NULL);
+      util_queue_finish(&queue);
+
 
       if (VERBOSE_PERF) {
          printf("... for %ldus\n", os_time_get() - wait_start);
       }
    }
 
-   free(tids);
    free(t_data);
 
    if (VERBOSE_PERF) {
       printf("Unpack done in %" PRId64 "us\n", os_time_get() - unpack_start);
       puts("");
    }
+   util_queue_destroy(&queue);
 }
