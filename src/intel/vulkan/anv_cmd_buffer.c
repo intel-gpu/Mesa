@@ -92,7 +92,7 @@ const struct anv_dynamic_state default_dynamic_state = {
    },
    .cull_mode = 0,
    .front_face = 0,
-   .primitive_topology = 0,
+   .primitive_topology = 0xffffffff,
    .depth_test_enable = 0,
    .depth_write_enable = 0,
    .depth_compare_op = 0,
