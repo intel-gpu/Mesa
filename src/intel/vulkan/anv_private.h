@@ -3490,6 +3490,10 @@ anv_cmd_buffer_all_color_write_masked(const struct anv_cmd_buffer *cmd_buffer)
    const struct anv_cmd_graphics_state *state = &cmd_buffer->state.gfx;
    uint8_t color_writes = state->dynamic.color_writes;
 
+   /* No color, nothing can be masked */
+   if (state->color_att_count == 0)
+      return false;
+
    /* All writes disabled through vkCmdSetColorWriteEnableEXT */
    if ((color_writes & ((1u << state->color_att_count) - 1)) == 0)
       return true;
