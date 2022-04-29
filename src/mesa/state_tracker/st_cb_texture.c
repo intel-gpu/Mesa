@@ -73,6 +73,7 @@
 #include "util/u_upload_mgr.h"
 #include "pipe/p_shader_tokens.h"
 #include "util/u_tile.h"
+#include "util/os_time.h"
 #include "util/format/u_format.h"
 #include "util/u_surface.h"
 #include "util/u_sampler.h"
@@ -3068,8 +3069,20 @@ st_finalize_texture(struct gl_context *ctx,
    /* If we already have a gallium texture, check that it matches the texture
     * object's format, target, size, num_levels, etc.
     */
+   int VERBOSE_PERF = 0;
+   int VERBOSE_ALPHA = 0;
    if (tObj->pt) {
-   util_queue_finish(&st->codec_queue);
+      int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
+
+      if (VERBOSE_PERF) {
+         puts("Queue wait...");
+      }
+         util_queue_finish(&st->codec_queue);
+
+      if (VERBOSE_PERF) {
+         printf("Queue done in %ldus\n", os_time_get() - unpack_start);
+         puts("");
+      }
       if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
           tObj->pt->format != firstImageFormat ||
           tObj->pt->last_level < tObj->lastLevel ||
@@ -3117,6 +3130,12 @@ st_finalize_texture(struct gl_context *ctx,
       for (level = tObj->Attrib.BaseLevel; level <= tObj->lastLevel; level++) {
          struct gl_texture_image *stImage =
             tObj->Image[face][level];
+
+      if (VERBOSE_ALPHA && stImage->compressed_data) {
+         printf("Fallback compressed texture %s\n",
+                 stImage->has_alpha ? "has alpha" : "has alpha");
+         puts("");
+      }
 
          /* Need to import images in main memory or held in other textures.
           */
