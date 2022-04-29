@@ -1386,6 +1386,15 @@ emit_3dstate_streamout(struct anv_graphics_pipeline *pipeline,
                .Stream3Decl = so_decl[3][i],
             });
       }
+
+#if GFX_VERx10 >= 125
+      /* Wa_14015946265: Send PC with CS stall after SO_DECL. */
+      if (intel_device_info_is_dg2(&pipeline->base.device->info)) {
+         anv_batch_emit(&pipeline->base.batch, GENX(PIPE_CONTROL), pc) {
+            pc.CommandStreamerStallEnable = true;
+         }
+      }
+#endif
    }
 
 #if GFX_VER == 7
