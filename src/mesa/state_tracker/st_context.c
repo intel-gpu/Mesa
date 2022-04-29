@@ -390,6 +390,7 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
 
    cso_destroy_context(st->cso_context);
 
+   util_queue_destroy(&st->codec_queue);
    if (st->pipe && destroy_pipe)
       st->pipe->destroy(st->pipe);
 
@@ -516,6 +517,19 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
       break;
    }
 
+   /* TODO: better understand nr_jobs and flags */
+   int nr_cpus = util_get_cpu_caps()->nr_cpus;
+   int nr_threads = nr_cpus - 2;
+   int nr_jobs = nr_threads * 2 - 4;
+   if (!util_queue_init(&st->codec_queue, "astc_unpack",
+                     nr_jobs,
+                     nr_threads,
+                     0,
+                     NULL /* global_data */)) {
+      printf("queue init failed\n");
+      st_destroy_context_priv(st, false);
+      return NULL;
+   }
    st->cso_context = cso_create_context(pipe, cso_flags);
    ctx->cso_context = st->cso_context;
 
