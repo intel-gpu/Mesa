@@ -580,7 +580,8 @@ st_UnmapTextureImage(struct gl_context *ctx,
                                         itransfer->temp_stride,
                                         transfer->box.width,
                                         transfer->box.height,
-                                        texImage->TexFormat);
+                                        texImage->TexFormat,
+                                        &st->codec_queue);
             } else {
                unreachable("unexpected format for a compressed format fallback");
             }
@@ -617,7 +618,8 @@ st_UnmapTextureImage(struct gl_context *ctx,
                                         itransfer->temp_data,
                                         itransfer->temp_stride,
                                         transfer->box.width, transfer->box.height,
-                                        texImage->TexFormat);
+                                        texImage->TexFormat,
+                                        &st->codec_queue);
             } else {
                unreachable("unexpected format for a compressed format fallback");
             }
@@ -3017,6 +3019,7 @@ st_finalize_texture(struct gl_context *ctx,
     * object's format, target, size, num_levels, etc.
     */
    if (tObj->pt) {
+   util_queue_finish(&st->codec_queue);
       if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
           tObj->pt->format != firstImageFormat ||
           tObj->pt->last_level < tObj->lastLevel ||
