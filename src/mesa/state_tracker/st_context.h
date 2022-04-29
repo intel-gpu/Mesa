@@ -122,6 +122,7 @@ struct st_context
    struct st_context_iface iface;
 
    struct gl_context *ctx;
+   struct util_queue codec_queue;
    struct pipe_screen *screen;
    struct pipe_context *pipe;
    struct cso_context *cso_context;
