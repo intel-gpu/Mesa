@@ -1861,6 +1861,10 @@ struct thread_data {
    unsigned src_height;
    mesa_format format;
 };
+void thread_cleanup(void *data /* *job*/, void *gdata, int thread_index)
+{
+   free(data);
+}
 
 void thread_work(void *data /* *job*/, void *gdata, int thread_index)
 {
@@ -1932,15 +1936,14 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_stride,
                          unsigned src_width,
                          unsigned src_height,
-                         mesa_format format)
+                         mesa_format format,
+                         struct util_queue *queue)
 {
+   int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
 
    unsigned blk_w, blk_h;
    _mesa_get_format_block_size(format, &blk_w, &blk_h);
    int y_blocks = DIV_ROUND_UP(src_height, blk_h);
-
-   util_cpu_detect();
-   int nr_cpus = util_get_cpu_caps()->nr_cpus;
 
    /* Determine the number of row chunks we'd like to hand off to individual
     * CPUs.
@@ -1953,27 +1956,8 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
     * TODO: Test more configurations.
     */
    int max_num_chunks = DIV_ROUND_UP(y_blocks, 4);
-   int nr_chunks = MIN2(max_num_chunks, nr_cpus);
+   int nr_chunks = MIN2(max_num_chunks, queue->max_threads);
 
-   struct thread_data *t_data =
-      (struct thread_data*)malloc(sizeof(struct thread_data) * nr_chunks);
-
-   /* To increase CPU utilization, we choose to reserve a chunk of work for
-    * the current thread instead of having it create an additional thread and
-    * wait for the others.
-    */
-   int nr_pthreads = nr_chunks - 1;
-
-
-   struct util_queue queue;
-   if (!util_queue_init(&queue, "astc_unpack",
-                     max_num_chunks - 1,
-                     nr_pthreads,
-                     0,
-                     NULL /* global_data */)) {
-      printf("queue init failed\n");
-   }
-   int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
    unsigned y = 0;
    for (int chunk = 0; chunk < nr_chunks; chunk++) {
 
@@ -1983,7 +1967,10 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
        */
       unsigned height_el = DIV_ROUND_UP(y_blocks - y, nr_chunks - chunk);
 
-      t_data[chunk] = {
+      struct thread_data *t_data =
+         (struct thread_data*)malloc(sizeof(struct thread_data));
+
+      t_data[0] = {
          .dst_row = dst_row + dst_stride * blk_h * y,
          .dst_stride = dst_stride,
          .src_row = src_row + src_stride * y,
@@ -1995,48 +1982,20 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
 
       if (VERBOSE_PERF) {
          printf("Chunk %d %s unpack: %d-%d (%del) -> %d-%d (%dpx)\n",
-                chunk, chunk < nr_pthreads ? "pthread" : "Execute",
+                chunk, "job",
                 y, y+height_el-1, height_el,
-                y * blk_h, y * blk_h + t_data[chunk].src_height-1,
-                t_data[chunk].src_height);
+                y * blk_h, y * blk_h + t_data[0].src_height-1,
+                t_data[0].src_height);
       }
 
-      if (chunk < nr_pthreads) {
-         util_queue_add_job(&queue, &t_data[chunk], NULL, thread_work, NULL,
-                            sizeof(t_data[chunk]));
-
-      } else {
-         int64_t exec_start = VERBOSE_PERF ? os_time_get() : 0;
-
-         thread_work(&t_data[chunk], NULL, -1);
-
-         if (VERBOSE_PERF)
-            printf("Executed for %ldus\n", os_time_get() - exec_start);
-      }
+      util_queue_add_job(queue, &t_data[0], NULL, thread_work,
+                         thread_cleanup, sizeof(t_data[0]));
 
       y += height_el;
    }
-
-   if (nr_pthreads > 0) {
-      int64_t wait_start = 0;
-      if (VERBOSE_PERF) {
-         printf("Waited on threads:\n");
-         wait_start = os_time_get();
-      }
-
-      util_queue_finish(&queue);
-
-
-      if (VERBOSE_PERF) {
-         printf("... for %ldus\n", os_time_get() - wait_start);
-      }
-   }
-
-   free(t_data);
 
    if (VERBOSE_PERF) {
       printf("Unpack done in %" PRId64 "us\n", os_time_get() - unpack_start);
       puts("");
    }
-   util_queue_destroy(&queue);
 }
