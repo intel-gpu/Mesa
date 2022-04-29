@@ -605,7 +605,8 @@ st_UnmapTextureImage(struct gl_context *ctx,
                                         itransfer->temp_stride,
                                         transfer->box.width,
                                         transfer->box.height,
-                                        texImage->TexFormat);
+                                        texImage->TexFormat,
+                                        &st->codec_queue);
             } else {
                unreachable("unexpected format for a compressed format fallback");
             }
@@ -642,7 +643,8 @@ st_UnmapTextureImage(struct gl_context *ctx,
                                         itransfer->temp_data,
                                         itransfer->temp_stride,
                                         transfer->box.width, transfer->box.height,
-                                        texImage->TexFormat);
+                                        texImage->TexFormat,
+                                        &st->codec_queue);
             } else if (_mesa_is_format_s3tc(texImage->TexFormat)) {
                _mesa_unpack_s3tc(map, transfer->stride,
                                  itransfer->temp_data,
@@ -3065,6 +3067,7 @@ st_finalize_texture(struct gl_context *ctx,
     * object's format, target, size, num_levels, etc.
     */
    if (tObj->pt) {
+   util_queue_finish(&st->codec_queue);
       if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
           tObj->pt->format != firstImageFormat ||
           tObj->pt->last_level < tObj->lastLevel ||

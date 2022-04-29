@@ -38,7 +38,8 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_stride,
                          unsigned src_width,
                          unsigned src_height,
-                         mesa_format format);
+                         mesa_format format,
+                         struct util_queue *queue);
 
 #ifdef __cplusplus
 }
