@@ -1310,7 +1310,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
       pipeline->gfx8.blend_state : pipeline->gfx7.blend_state;
    uint32_t *state_pos = blend_state_start;
 
-   bool has_writeable_rt = false;
    state_pos += GENX(BLEND_STATE_length);
 #if GFX_VER >= 8
    struct GENX(BLEND_STATE_ENTRY) bs0 = { 0 };
@@ -1326,11 +1325,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
       assert(i < MAX_RTS);
 
       if (info == NULL || binding->index >= info->attachmentCount) {
-         state_pos = write_disabled_blend(state_pos);
-         continue;
-      }
-
-      if ((pipeline->dynamic_state.color_writes & (1u << binding->index)) == 0) {
          state_pos = write_disabled_blend(state_pos);
          continue;
       }
@@ -1372,18 +1366,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
          .AlphaBlendFunction = vk_to_intel_blend_op[a->alphaBlendOp],
       };
 
-      /* Write logic op if not dynamic */
-      if (!(dynamic_states & ANV_CMD_DIRTY_DYNAMIC_LOGIC_OP))
-         entry.LogicOpFunction = genX(vk_to_intel_logic_op)[info->logicOp];
-
-      /* Write blending color if not dynamic */
-      if (!(dynamic_states & ANV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_STATE)) {
-         entry.WriteDisableAlpha = !(a->colorWriteMask & VK_COLOR_COMPONENT_A_BIT);
-         entry.WriteDisableRed   = !(a->colorWriteMask & VK_COLOR_COMPONENT_R_BIT);
-         entry.WriteDisableGreen = !(a->colorWriteMask & VK_COLOR_COMPONENT_G_BIT);
-         entry.WriteDisableBlue  = !(a->colorWriteMask & VK_COLOR_COMPONENT_B_BIT);
-      }
-
       if (a->srcColorBlendFactor != a->srcAlphaBlendFactor ||
           a->dstColorBlendFactor != a->dstAlphaBlendFactor ||
           a->colorBlendOp != a->alphaBlendOp) {
@@ -1415,11 +1397,6 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
                  "in the shader.  Disabling blending to avoid GPU hangs.");
          entry.ColorBufferBlendEnable = false;
       }
-
-      /* We can only set has_writeable_rt if we blend color is not dynamic. */
-      if (!(dynamic_states & ANV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_STATE) &&
-            a->colorWriteMask != 0)
-         has_writeable_rt = true;
 
       /* Our hardware applies the blend factor prior to the blend function
        * regardless of what function is used.  Technically, this means the
@@ -1458,12 +1435,7 @@ emit_cb_state(struct anv_graphics_pipeline *pipeline,
    blend.AlphaTestEnable               = false;
    blend.IndependentAlphaBlendEnable   = blend_state.IndependentAlphaBlendEnable;
 
-   if (!(dynamic_states & ANV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_STATE))
-      blend.HasWriteableRT             = has_writeable_rt;
-
    GENX(3DSTATE_PS_BLEND_pack)(NULL, pipeline->gfx8.ps_blend, &blend);
-#else
-   (void)has_writeable_rt;
 #endif
 
    GENX(BLEND_STATE_pack)(NULL, blend_state_start, &blend_state);

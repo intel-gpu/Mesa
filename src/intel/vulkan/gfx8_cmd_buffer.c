@@ -630,6 +630,7 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
 
    if (cmd_buffer->state.gfx.dirty & (ANV_CMD_DIRTY_PIPELINE |
                                       ANV_CMD_DIRTY_DYNAMIC_COLOR_BLEND_STATE)) {
+      const struct anv_cmd_graphics_state *state = &cmd_buffer->state.gfx;
       /* 3DSTATE_WM in the hope we can avoid spawning fragment shaders
        * threads.
        */
@@ -637,8 +638,10 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
       struct GENX(3DSTATE_WM) wm = {
          GENX(3DSTATE_WM_header),
 
-         .ForceThreadDispatchEnable = (pipeline->force_fragment_thread_dispatch ||
-                                       anv_cmd_buffer_all_color_write_masked(cmd_buffer)) ?
+         .ForceThreadDispatchEnable = anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT) &&
+                                      (pipeline->force_fragment_thread_dispatch ||
+                                       (state->color_att_count > 0 &&
+                                        anv_cmd_buffer_all_color_write_masked(cmd_buffer))) ?
                                       ForceON : 0,
       };
       GENX(3DSTATE_WM_pack)(NULL, wm_dwords, &wm);
@@ -652,6 +655,7 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
       const uint8_t color_writes = d->color_writes;
       const struct anv_cmd_graphics_state *state = &cmd_buffer->state.gfx;
       bool has_writeable_rt =
+         anv_pipeline_has_stage(pipeline, MESA_SHADER_FRAGMENT) &&
          (color_writes & ((1u << state->color_att_count) - 1)) != 0;
 
       /* 3DSTATE_PS_BLEND to be consistent with the rest of the
