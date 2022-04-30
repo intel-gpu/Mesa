@@ -40,7 +40,8 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_height,
                          mesa_format format,
                          struct util_queue *queue,
-                         bool *has_alpha);
+                         struct util_queue_fence *fence,
+                         bool *opaque);
 
 #ifdef __cplusplus
 }
