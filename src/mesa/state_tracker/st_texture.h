@@ -46,7 +46,6 @@ struct st_texture_image_transfer
    /* For compressed texture fallback. */
    GLubyte *temp_data; /**< Temporary compressed texture storage. */
    unsigned temp_stride; /**< Stride of the compressed texture storage. */
-   struct pipe_box box; /**< Region of the transfer's resource to write. */
 };
 
 

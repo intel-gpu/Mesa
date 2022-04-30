@@ -516,10 +516,6 @@ st_MapTextureImage(struct gl_context *ctx,
 
       struct st_texture_image_transfer *itransfer = &texImage->transfer[z];
 
-      assert(itransfer->box.depth == 0);
-      if (transfer_flags & PIPE_MAP_WRITE)
-         u_box_2d_zslice(x, y, z, w, h, &itransfer->box);
-
       unsigned blk_w, blk_h;
       _mesa_get_format_block_size(texImage->TexFormat, &blk_w, &blk_h);
 
@@ -533,6 +529,12 @@ st_MapTextureImage(struct gl_context *ctx,
          texImage->compressed_data->ptr +
          (z * y_blocks + (y / blk_h)) * stride +
          (x / blk_w) * block_size;
+
+      if (mode & GL_MAP_WRITE_BIT) {
+         texImage->TexObject->needs_validation = true;
+         pipe_resource_reference(&texImage->TexObject->pt, NULL);
+         st_texture_release_all_sampler_views(st, texImage->TexObject);
+      }
    } else {
       struct pipe_transfer *transfer;
       *mapOut = st_texture_image_map(st, texImage, transfer_flags,
@@ -549,138 +551,8 @@ st_UnmapTextureImage(struct gl_context *ctx,
 {
    struct st_context *st = st_context(ctx);
 
-   if (st_compressed_format_fallback(st, texImage->TexFormat)) {
-      /* Decompress the compressed image on upload if the driver doesn't
-       * support the compressed format. */
-      unsigned z = slice + texImage->Face;
-      struct st_texture_image_transfer *itransfer = &texImage->transfer[z];
-
-      if (itransfer->box.depth != 0) {
-         assert(itransfer->box.depth == 1);
-
-         struct pipe_transfer *transfer;
-         GLubyte *map = st_texture_image_map(st, texImage,
-                                             PIPE_MAP_WRITE |
-                                             PIPE_MAP_DISCARD_RANGE,
-                                             itransfer->box.x,
-                                             itransfer->box.y, slice,
-                                             itransfer->box.width,
-                                             itransfer->box.height, 1,
-                                             &transfer);
-
-         if (!map) {
-            _mesa_error(ctx, GL_OUT_OF_MEMORY, "compressed fallback map");
-            return;
-         }
-
-         assert(z == transfer->box.z);
-
-         if (util_format_is_compressed(texImage->pt->format)) {
-            /* Transcode into a different compressed format. */
-            unsigned size =
-               _mesa_format_image_size(PIPE_FORMAT_R8G8B8A8_UNORM,
-                                       transfer->box.width,
-                                       transfer->box.height, 1);
-            void *tmp = malloc(size);
-
-            /* Decompress to tmp. */
-            if (texImage->TexFormat == MESA_FORMAT_ETC1_RGB8) {
-               _mesa_etc1_unpack_rgba8888(tmp, transfer->box.width * 4,
-                                          itransfer->temp_data,
-                                          itransfer->temp_stride,
-                                          transfer->box.width,
-                                          transfer->box.height);
-            } else if (_mesa_is_format_etc2(texImage->TexFormat)) {
-               bool bgra = texImage->pt->format == PIPE_FORMAT_B8G8R8A8_SRGB;
-
-               _mesa_unpack_etc2_format(tmp, transfer->box.width * 4,
-                                        itransfer->temp_data,
-                                        itransfer->temp_stride,
-                                        transfer->box.width,
-                                        transfer->box.height,
-                                        texImage->TexFormat,
-                                        bgra);
-            } else if (_mesa_is_format_astc_2d(texImage->TexFormat)) {
-               _mesa_unpack_astc_2d_ldr(tmp, transfer->box.width * 4,
-                                        itransfer->temp_data,
-                                        itransfer->temp_stride,
-                                        transfer->box.width,
-                                        transfer->box.height,
-                                        texImage->TexFormat,
-                                        &st->codec_queue,
-                                        &texImage->has_alpha);
-            } else {
-               unreachable("unexpected format for a compressed format fallback");
-            }
-
-            /* Compress it to the target format. */
-            struct gl_pixelstore_attrib pack = {0};
-            pack.Alignment = 4;
-
-            _mesa_texstore(ctx, 2, GL_RGBA, texImage->pt->format,
-                           transfer->stride, &map,
-                           transfer->box.width,
-                           transfer->box.height, 1, GL_RGBA,
-                           GL_UNSIGNED_BYTE, tmp, &pack);
-            free(tmp);
-         } else {
-            /* Decompress into an uncompressed format. */
-            if (texImage->TexFormat == MESA_FORMAT_ETC1_RGB8) {
-               _mesa_etc1_unpack_rgba8888(map, transfer->stride,
-                                          itransfer->temp_data,
-                                          itransfer->temp_stride,
-                                          transfer->box.width,
-                                          transfer->box.height);
-            } else if (_mesa_is_format_etc2(texImage->TexFormat)) {
-               bool bgra = texImage->pt->format == PIPE_FORMAT_B8G8R8A8_SRGB;
-
-               _mesa_unpack_etc2_format(map, transfer->stride,
-                                        itransfer->temp_data,
-                                        itransfer->temp_stride,
-                                        transfer->box.width, transfer->box.height,
-                                        texImage->TexFormat,
-                                        bgra);
-            } else if (_mesa_is_format_astc_2d(texImage->TexFormat)) {
-               _mesa_unpack_astc_2d_ldr(map, transfer->stride,
-                                        itransfer->temp_data,
-                                        itransfer->temp_stride,
-                                        transfer->box.width, transfer->box.height,
-                                        texImage->TexFormat,
-                                        &st->codec_queue,
-                                        &texImage->has_alpha);
-            } else if (_mesa_is_format_s3tc(texImage->TexFormat)) {
-               _mesa_unpack_s3tc(map, transfer->stride,
-                                 itransfer->temp_data,
-                                 itransfer->temp_stride,
-                                 transfer->box.width, transfer->box.height,
-                                 texImage->TexFormat);
-            } else if (_mesa_is_format_rgtc(texImage->TexFormat) ||
-                       _mesa_is_format_latc(texImage->TexFormat)) {
-               _mesa_unpack_rgtc(map, transfer->stride,
-                                 itransfer->temp_data,
-                                 itransfer->temp_stride,
-                                 transfer->box.width, transfer->box.height,
-                                 texImage->TexFormat);
-            } else if (_mesa_is_format_bptc(texImage->TexFormat)) {
-               _mesa_unpack_bptc(map, transfer->stride,
-                                 itransfer->temp_data,
-                                 itransfer->temp_stride,
-                                 transfer->box.width, transfer->box.height,
-                                 texImage->TexFormat);
-            } else {
-               unreachable("unexpected format for a compressed format fallback");
-            }
-         }
-
-         st_texture_image_unmap(st, texImage, slice);
-         memset(&itransfer->box, 0, sizeof(struct pipe_box));
-      }
-
-      itransfer->temp_data = NULL;
-      itransfer->temp_stride = 0;
-   } else {
+   if (!st_compressed_format_fallback(st, texImage->TexFormat))
       st_texture_image_unmap(st, texImage, slice);
-   }
 }
 
 
@@ -988,6 +860,13 @@ st_AllocTextureImageBuffer(struct gl_context *ctx,
    stObj->needs_validation = true;
 
    compressed_tex_fallback_allocate(st, stImage);
+
+   if (stImage->compressed_data) {
+      pipe_resource_reference(&stObj->pt, NULL);
+      st_texture_release_all_sampler_views(st, stObj);
+      return true;
+   }
+
    const bool allowAllocateToStObj = !stObj->pt ||
                                      stObj->pt->last_level == 0 ||
                                      texImage->Level == 0;
@@ -3072,17 +2951,6 @@ st_finalize_texture(struct gl_context *ctx,
    int VERBOSE_PERF = 0;
    int VERBOSE_ALPHA = 0;
    if (tObj->pt) {
-      int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
-
-      if (VERBOSE_PERF) {
-         puts("Queue wait...");
-      }
-         util_queue_finish(&st->codec_queue);
-
-      if (VERBOSE_PERF) {
-         printf("Queue done in %ldus\n", os_time_get() - unpack_start);
-         puts("");
-      }
       if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
           tObj->pt->format != firstImageFormat ||
           tObj->pt->last_level < tObj->lastLevel ||
@@ -3098,6 +2966,118 @@ st_finalize_texture(struct gl_context *ctx,
          pipe_resource_reference(&tObj->pt, NULL);
          st_texture_release_all_sampler_views(st, tObj);
          st->dirty |= ST_NEW_FRAMEBUFFER;
+      }
+   }
+
+
+   bool compressed_fallback =
+      st_compressed_format_fallback(st, firstImage->TexFormat);
+   bool transcoding = false;
+   void *uncompressed_data[MAX_FACES][MAX_TEXTURE_LEVELS];
+
+   // XXX: also need to only do this once...or expand...or something
+   if (compressed_fallback) {
+      assert(!tObj->pt);
+
+      transcoding = util_format_is_compressed(firstImageFormat);
+
+      struct util_queue_fence codec_fence;
+      util_queue_fence_init(&codec_fence);
+
+      unsigned blk_w, blk_h;
+      _mesa_get_format_block_size(firstImage->TexFormat, &blk_w, &blk_h);
+
+      bool opaque = true;
+
+      int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
+
+      for (face = 0; face < nr_faces; face++) {
+         for (unsigned level = tObj->Attrib.BaseLevel;
+              level <= tObj->lastLevel; level++) {
+            struct gl_texture_image *texImage = tObj->Image[face][level];
+
+            unsigned stride =
+               _mesa_format_row_stride(texImage->TexFormat, texImage->Width2);
+
+            unsigned depth;
+            if (tObj->Target == GL_TEXTURE_3D)
+               depth = u_minify(ptDepth, level);
+            else if (tObj->Target == GL_TEXTURE_CUBE_MAP)
+               depth = 1;
+            else
+               depth = ptLayers;
+
+            unsigned size =
+               _mesa_format_image_size(PIPE_FORMAT_R8G8B8A8_UNORM,
+                                       texImage->Width2, texImage->Height2,
+                                       depth);
+            void *dst = uncompressed_data[face][level] = malloc(size);
+
+            for (unsigned z = 0; z < depth; z++) {
+               unsigned y_blocks = DIV_ROUND_UP(texImage->Height2, blk_h);
+               void *src = texImage->compressed_data->ptr + z * y_blocks;
+
+               bool last_image = level == tObj->lastLevel && z == depth - 1;
+
+               /* Decompress to uncompressed_data[][] */
+               if (texImage->TexFormat == MESA_FORMAT_ETC1_RGB8) {
+                  _mesa_etc1_unpack_rgba8888(dst, texImage->Width2 * 4,
+                                             src, stride,
+                                             texImage->Width2,
+                                             texImage->Height2);
+                  opaque = false; /* don't know */
+               } else if (_mesa_is_format_etc2(texImage->TexFormat)) {
+                  bool bgra = texImage->pt->format == PIPE_FORMAT_B8G8R8A8_SRGB;
+
+                  _mesa_unpack_etc2_format(dst, texImage->Width2 * 4,
+                                           src, stride,
+                                           texImage->Width2, texImage->Height2,
+                                           texImage->TexFormat,
+                                           bgra);
+                  opaque = false; /* don't know */
+               } else if (_mesa_is_format_astc_2d(texImage->TexFormat)) {
+                  _mesa_unpack_astc_2d_ldr(dst, texImage->Width2 * 4,
+                                           src, stride,
+                                           texImage->Width2, texImage->Height2,
+                                           texImage->TexFormat,
+                                           &st->codec_queue,
+                                           last_image ? &codec_fence : NULL,
+                                           &opaque);
+               } else if (_mesa_is_format_s3tc(texImage->TexFormat)) {
+                  _mesa_unpack_s3tc(dst, texImage->Width2 * 4, src, stride,
+                                    texImage->Width2, texImage->Height2,
+                                    texImage->TexFormat);
+               } else if (_mesa_is_format_rgtc(texImage->TexFormat) ||
+                          _mesa_is_format_latc(texImage->TexFormat)) {
+                  _mesa_unpack_rgtc(dst, texImage->Width2 * 4, src, stride,
+                                    texImage->Width2, texImage->Height2,
+                                    texImage->TexFormat);
+               } else if (_mesa_is_format_bptc(texImage->TexFormat)) {
+                  _mesa_unpack_bptc(dst, texImage->Width2 * 4, src, stride,
+                                    texImage->Width2, texImage->Height2,
+                                    texImage->TexFormat);
+               } else {
+                  unreachable("unexpected compressed format fallback");
+               }
+            }
+         }
+      }
+
+      util_queue_fence_wait(&codec_fence);
+
+      if (VERBOSE_PERF) {
+         printf("Unpack done in %ldus\n\n", (long) (os_time_get() - unpack_start));
+      }
+
+      if (VERBOSE_ALPHA) {
+         printf("Fallback compressed texture %s\n\n",
+                opaque ? "is fully opaque" : "has alpha transparency");
+      }
+
+      if (transcoding && opaque) {
+         firstImageFormat =
+            util_format_is_srgb(firstImageFormat) ?
+            PIPE_FORMAT_DXT1_SRGB : PIPE_FORMAT_DXT1_RGB;
       }
    }
 
@@ -3131,12 +3111,6 @@ st_finalize_texture(struct gl_context *ctx,
          struct gl_texture_image *stImage =
             tObj->Image[face][level];
 
-      if (VERBOSE_ALPHA && stImage->compressed_data) {
-         printf("Fallback compressed texture %s\n",
-                 stImage->has_alpha ? "has alpha" : "has alpha");
-         puts("");
-      }
-
          /* Need to import images in main memory or held in other textures.
           */
          if (stImage && tObj->pt != stImage->pt) {
@@ -3160,7 +3134,32 @@ st_finalize_texture(struct gl_context *ctx,
                  stImage->Height == height &&
                  stImage->Depth == depth)) {
                /* src image fits expected dest mipmap level size */
-               copy_image_data_to_texture(st, tObj, level, stImage);
+               if (!compressed_fallback) {
+                  copy_image_data_to_texture(st, tObj, level, stImage);
+               } else {
+                  for (unsigned z = 0; z < depth; z++) {
+                     /* Compress it to the target format. */
+                     struct gl_pixelstore_attrib pack = {0};
+                     pack.Alignment = 4;
+                     struct pipe_transfer *transfer;
+
+                     GLubyte *dest =
+                        pipe_texture_map_3d(st->pipe, tObj->pt, level,
+                                            PIPE_MAP_WRITE, 0, 0, z,
+                                            stImage->Width, stImage->Height,
+                                            depth, &transfer);
+
+                     _mesa_texstore(ctx, 2, GL_RGBA, tObj->pt->format,
+                                    transfer->stride, &dest,
+                                    transfer->box.width, transfer->box.height,
+                                    1, GL_RGBA, GL_UNSIGNED_BYTE,
+                                    uncompressed_data[face][level], &pack);
+
+                     pipe_texture_unmap(st->pipe, transfer);
+
+                     free(uncompressed_data[face][level]);
+                  }
+               }
             }
          }
       }
