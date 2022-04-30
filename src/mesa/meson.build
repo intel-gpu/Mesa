@@ -464,6 +464,7 @@ if with_sse41
     files('main/texcompress_astc.cpp', 'main/sse_minmax.c'),
     c_args : [c_msvc_compat_args, sse41_args],
     cpp_args : [cpp_msvc_compat_args, sse41_args],
+    dependencies : dep_valgrind,
     include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
     gnu_symbol_visibility : 'hidden',
   )
