@@ -1948,7 +1948,6 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                          unsigned src_height,
                          mesa_format format,
                          struct util_queue *queue,
-                         struct util_queue_fence *fence,
                          bool *opaque)
 {
    int64_t unpack_start = VERBOSE_PERF ? os_time_get() : 0;
@@ -2001,7 +2000,7 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
                 t_data[0].src_height);
       }
 
-      util_queue_add_job(queue, &t_data[0], fence, thread_work,
+      util_queue_add_job(queue, &t_data[0], NULL, thread_work,
                          thread_cleanup, sizeof(t_data[0]));
 
       y += height_el;
