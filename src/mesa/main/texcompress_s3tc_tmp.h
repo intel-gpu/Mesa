@@ -1035,4 +1035,41 @@ tx_compress_dxtn(GLint srccomps, GLint width, GLint height,
    }
 }
 
+struct dxt_compressor_thread_data {
+   uint8_t *dst;
+   const uint8_t *src;
+   int dst_rowstride;
+   int width;
+   int height;
+   int srccomps;
+   unsigned dstcomps;
+};
+
+static void
+tx_compress_dxt1_thread(void *data, void *gdata, int thread_index)
+{
+   struct dxt_compressor_thread_data *t = data;
+
+   tx_compress_dxt1(t->srccomps, t->width, t->height, t->src,
+                    t->dst, t->dst_rowstride, t->dstcomps);
+}
+
+static void
+tx_compress_dxt3_thread(void *data, void *gdata, int thread_index)
+{
+   struct dxt_compressor_thread_data *t = data;
+
+   tx_compress_dxt3(t->srccomps, t->width, t->height, t->src,
+                    t->dst, t->dst_rowstride);
+}
+
+static void
+tx_compress_dxt5_thread(void *data, void *gdata, int thread_index)
+{
+   struct dxt_compressor_thread_data *t = data;
+
+   tx_compress_dxt5(t->srccomps, t->width, t->height, t->src,
+                    t->dst, t->dst_rowstride);
+}
+
 #endif
