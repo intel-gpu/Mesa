@@ -40,7 +40,73 @@
 #include "texstore.h"
 #include "format_unpack.h"
 #include "util/format_srgb.h"
+#include "state_tracker/st_context.h"
 
+static void
+thread_cleanup(void *data, void *gdata, int thread_index)
+{
+   free(data);
+}
+
+static void
+compress_dxtn_threaded(struct util_queue *queue,
+                       int srccomps, int width, int height,
+                       const void *src,
+                       uint8_t *dst, int dst_rowstride,
+                       unsigned dstcomps,
+                       void (*thread_work)(void *, void *, int))
+{
+   const bool VERBOSE_PERF = false;
+   int64_t start_time = VERBOSE_PERF ? os_time_get() : 0;
+
+   unsigned src_rowstride = srccomps * width;
+
+   const int BLOCK_SIZE = 4;
+   int y_blocks = DIV_ROUND_UP(height, BLOCK_SIZE);
+
+   /* Determine the number of row chunks we'd like to hand off to individual
+    * CPUs.
+    *
+    * We limit the smallest chunk height to four rows.
+    * TODO: Do more performance tuning.
+    */
+   int max_num_chunks = DIV_ROUND_UP(y_blocks, 4);
+   int nr_chunks = MIN2(max_num_chunks, queue->max_threads);
+
+   unsigned y = 0;
+   for (int chunk = 0; chunk < nr_chunks; chunk++) {
+      /* We want to distribute the work as evenly as possible. When a perfect
+       * distribution isn't possible, we choose to give the earlier threads
+       * slightly more work than the others to increase CPU utilization.
+       */
+      unsigned height_el = DIV_ROUND_UP(y_blocks - y, nr_chunks - chunk);
+
+      struct dxt_compressor_thread_data *t_data =
+         malloc(sizeof(struct dxt_compressor_thread_data));
+
+      *t_data = (struct dxt_compressor_thread_data) {
+         .srccomps = srccomps,
+         .dstcomps = dstcomps,
+         .width = width,
+         .height = MIN2(BLOCK_SIZE * height_el, height - y * BLOCK_SIZE),
+         .src = (uint8_t *) src + src_rowstride * BLOCK_SIZE * y,
+         .dst = dst + dst_rowstride * y,
+         .dst_rowstride = dst_rowstride,
+      };
+
+      util_queue_add_job(queue, t_data, NULL, thread_work, thread_cleanup,
+                         sizeof(*t_data));
+
+      y += height_el;
+   }
+
+   util_queue_finish(queue);
+
+   if (VERBOSE_PERF) {
+      fprintf(stderr, "DXTn compression finished in %" PRIi64 " us\n",
+              os_time_get() - start_time);
+   }
+}
 
 /**
  * Store user's image in rgb_dxt1 format.
@@ -48,6 +114,7 @@
 GLboolean
 _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
 {
+   struct st_context *st = st_context(ctx);
    const GLubyte *pixels;
    GLubyte *dst;
    const GLubyte *tempImage = NULL;
@@ -87,8 +154,9 @@ _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
 
    dst = dstSlices[0];
 
-   tx_compress_dxt1(srccomps, srcWidth, srcHeight, pixels,
-                    dst, dstRowStride, 3);
+   compress_dxtn_threaded(&st->codec_queue, srccomps, srcWidth, srcHeight,
+                          pixels, dst, dstRowStride, 3,
+                          tx_compress_dxt1_thread);
 
    free((void *) tempImage);
 
@@ -102,6 +170,7 @@ _mesa_texstore_rgb_dxt1(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
 {
+   struct st_context *st = st_context(ctx);
    const GLubyte *pixels;
    GLubyte *dst;
    const GLubyte *tempImage = NULL;
@@ -143,7 +212,9 @@ _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
 
    dst = dstSlices[0];
 
-   tx_compress_dxt1(4, srcWidth, srcHeight, pixels, dst, dstRowStride, 4);
+   compress_dxtn_threaded(&st->codec_queue, 4, srcWidth, srcHeight,
+                          pixels, dst, dstRowStride, 4,
+                          tx_compress_dxt1_thread);
 
    free((void*) tempImage);
 
@@ -157,6 +228,7 @@ _mesa_texstore_rgba_dxt1(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
 {
+   struct st_context *st = st_context(ctx);
    const GLubyte *pixels;
    GLubyte *dst;
    const GLubyte *tempImage = NULL;
@@ -197,7 +269,9 @@ _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
 
    dst = dstSlices[0];
 
-   tx_compress_dxt3(4, srcWidth, srcHeight, pixels, dst, dstRowStride);
+   compress_dxtn_threaded(&st->codec_queue, 4, srcWidth, srcHeight,
+                          pixels, dst, dstRowStride, 4,
+                          tx_compress_dxt3_thread);
 
    free((void *) tempImage);
 
@@ -211,6 +285,7 @@ _mesa_texstore_rgba_dxt3(TEXSTORE_PARAMS)
 GLboolean
 _mesa_texstore_rgba_dxt5(TEXSTORE_PARAMS)
 {
+   struct st_context *st = st_context(ctx);
    const GLubyte *pixels;
    GLubyte *dst;
    const GLubyte *tempImage = NULL;
@@ -251,7 +326,9 @@ _mesa_texstore_rgba_dxt5(TEXSTORE_PARAMS)
 
    dst = dstSlices[0];
 
-   tx_compress_dxt5(4, srcWidth, srcHeight, pixels, dst, dstRowStride);
+   compress_dxtn_threaded(&st->codec_queue, 4, srcWidth, srcHeight,
+                          pixels, dst, dstRowStride, 4,
+                          tx_compress_dxt5_thread);
 
    free((void *) tempImage);
 
