@@ -2981,9 +2981,6 @@ st_finalize_texture(struct gl_context *ctx,
 
       transcoding = util_format_is_compressed(firstImageFormat);
 
-      struct util_queue_fence codec_fence;
-      util_queue_fence_init(&codec_fence);
-
       unsigned blk_w, blk_h;
       _mesa_get_format_block_size(firstImage->TexFormat, &blk_w, &blk_h);
 
@@ -3017,8 +3014,6 @@ st_finalize_texture(struct gl_context *ctx,
                unsigned y_blocks = DIV_ROUND_UP(texImage->Height2, blk_h);
                void *src = texImage->compressed_data->ptr + z * y_blocks;
 
-               bool last_image = level == tObj->lastLevel && z == depth - 1;
-
                /* Decompress to uncompressed_data[][] */
                if (texImage->TexFormat == MESA_FORMAT_ETC1_RGB8) {
                   _mesa_etc1_unpack_rgba8888(dst, texImage->Width2 * 4,
@@ -3041,7 +3036,6 @@ st_finalize_texture(struct gl_context *ctx,
                                            texImage->Width2, texImage->Height2,
                                            texImage->TexFormat,
                                            &st->codec_queue,
-                                           last_image ? &codec_fence : NULL,
                                            &opaque);
                } else if (_mesa_is_format_s3tc(texImage->TexFormat)) {
                   _mesa_unpack_s3tc(dst, texImage->Width2 * 4, src, stride,
@@ -3063,7 +3057,7 @@ st_finalize_texture(struct gl_context *ctx,
          }
       }
 
-      util_queue_fence_wait(&codec_fence);
+      util_queue_finish(&st->codec_queue);
 
       if (VERBOSE_PERF) {
          printf("Unpack done in %ldus\n\n", (long) (os_time_get() - unpack_start));
