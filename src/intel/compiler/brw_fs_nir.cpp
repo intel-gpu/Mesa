@@ -4247,6 +4247,7 @@ emit_fence(const fs_builder &bld, enum opcode opcode,
 
 static uint32_t
 lsc_fence_descriptor_for_intrinsic(const struct intel_device_info *devinfo,
+                                   gl_shader_stage stage,
                                    nir_intrinsic_instr *instr)
 {
    assert(devinfo->has_lsc);
@@ -4258,7 +4259,13 @@ lsc_fence_descriptor_for_intrinsic(const struct intel_device_info *devinfo,
       switch (nir_intrinsic_memory_scope(instr)) {
       case NIR_SCOPE_DEVICE:
       case NIR_SCOPE_QUEUE_FAMILY:
-         scope = LSC_FENCE_TILE;
+         /* TODO: We emit here LSC_FENCE_GPU fence when dealing with
+          * vertex stage and barrier that has device or queue_family scope.
+          * This is used as a temporary workaround for unknown issues with
+          * dEQP-VK.memory_model.* tests and needs to be fixed properly
+          * later.
+          */
+         scope = stage == MESA_SHADER_VERTEX ? LSC_FENCE_GPU : LSC_FENCE_TILE;
          flush_type = LSC_FLUSH_TYPE_EVICT;
          break;
       case NIR_SCOPE_WORKGROUP:
@@ -4549,7 +4556,7 @@ fs_visitor::nir_emit_intrinsic(const fs_builder &bld, nir_intrinsic_instr *instr
       if (devinfo->has_lsc) {
          assert(devinfo->verx10 >= 125);
          uint32_t desc =
-            lsc_fence_descriptor_for_intrinsic(devinfo, instr);
+            lsc_fence_descriptor_for_intrinsic(devinfo, stage, instr);
          if (ugm_fence) {
             fence_regs[fence_regs_count++] =
                emit_fence(ubld, opcode, GFX12_SFID_UGM, desc,
