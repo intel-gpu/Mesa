@@ -341,10 +341,13 @@ init_render_queue_state(struct anv_queue *queue)
    }
 #else
    /* Wa_14015207028
+    * Wa_14015168029, Wa_14015258955 (MTL A0)
     *
     * Disable batch level preemption for some primitive topologies.
     */
-   if (intel_device_info_is_dg2(&device->info)) {
+   if (intel_device_info_is_dg2(&device->info) ||
+       (intel_device_info_is_mtl(&device->info) &&
+        device->info.revision < 4 /* A0 */)) {
       anv_batch_write_reg(&batch, GENX(VFG_PREEMPTION_CHICKEN_BITS), vfgc) {
          vfgc.BatchPreemptionDisable = true;
          vfgc.BatchPreemptionDisableMask = true;
