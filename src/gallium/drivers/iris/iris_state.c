@@ -1063,7 +1063,10 @@ iris_init_render_context(struct iris_batch *batch)
 
 #if GFX_VERx10 >= 125
    /* Wa_14015207028 */
-   if (intel_device_info_is_dg2(devinfo)) {
+   /* Wa_14015168029, Wa_14015258955 (MTL A0) */
+   if (intel_device_info_is_dg2(devinfo) ||
+       (intel_device_info_is_mtl(devinfo) &&
+        devinfo->revision < 4 /* A0 */)) {
       iris_emit_reg(batch, GENX(VFG_PREEMPTION_CHICKEN_BITS), vfgc) {
          vfgc.BatchPreemptionDisable = true;
          vfgc.BatchPreemptionDisableMask = true;
