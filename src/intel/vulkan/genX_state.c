@@ -323,6 +323,7 @@ init_render_queue_state(struct anv_queue *queue)
       }
    }
 
+#if GFX_VERx10 < 125
    /* an unknown issue is causing vs push constants to become
     * corrupted during object-level preemption. For now, restrict
     * to command buffer level preemption to avoid rendering
@@ -337,6 +338,18 @@ init_render_queue_state(struct anv_queue *queue)
       cc1.DisablePreemptionandHighPriorityPausingdueto3DPRIMITIVECommandMask = true;
 #endif
    }
+#else
+   /* Wa_14015207028
+    *
+    * Disable batch level preemption for some primitive topologies.
+    */
+   if (intel_device_info_is_dg2(&device->info)) {
+      anv_batch_write_reg(&batch, GENX(VFG_PREEMPTION_CHICKEN_BITS), vfgc) {
+         vfgc.BatchPreemptionDisable = true;
+         vfgc.BatchPreemptionDisableMask = true;
+      }
+   }
+#endif
 
 #if GFX_VERx10 < 125
 #define AA_LINE_QUALITY_REG GENX(3D_CHICKEN3)
