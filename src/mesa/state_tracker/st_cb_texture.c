@@ -3457,7 +3457,15 @@ st_TextureView(struct gl_context *ctx,
    int face;
    int level;
 
-   pipe_resource_reference(&tex->pt, orig->pt);
+   /* For texture views where the original object has a compressed format
+    * fallback, the original may still have validation (due to the deferred
+    * format selection and transcoding), even though it's technically an
+    * immutable texture object.  If the underlying object is already fully
+    * validated, we can inherit that here.  Otherwise, we should NULL out
+    * all pt and mark it as needing validation so that we actually do the
+    * transcode once.
+    */
+   pipe_resource_reference(&tex->pt, orig->needs_validation ? NULL : orig->pt);
 
    /* Set image resource pointers */
    for (level = 0; level < numLevels; level++) {
@@ -3466,7 +3474,8 @@ st_TextureView(struct gl_context *ctx,
             texObj->Image[face][level];
          struct gl_texture_image *origImage =
             origTexObj->Image[face][level];
-         pipe_resource_reference(&stImage->pt, tex->pt);
+         pipe_resource_reference(&stImage->pt,
+                                 orig->needs_validation ? NULL : tex->pt);
          if (origImage &&
              origImage->compressed_data) {
             pipe_reference(NULL,
@@ -3487,8 +3496,13 @@ st_TextureView(struct gl_context *ctx,
     */
    st_texture_release_all_sampler_views(st, tex);
 
-   /* The texture is in a validated state, so no need to check later. */
-   tex->needs_validation = false;
+   /* Immutable textures are already in a validated state, so no need to
+    * check later.  One exception is compressed format fallbacks, where we
+    * inherit the needs_validation flag from the original.  If it was
+    * already handled, we've inherited all the pt above and are good to go.
+    * If not, we want to do a st_finalize_texture to transcode the data.
+    */
+   tex->needs_validation = orig->needs_validation;
    tex->validated_first_level = 0;
    tex->validated_last_level = numLevels - 1;
 
