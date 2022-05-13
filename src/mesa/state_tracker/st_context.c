@@ -519,8 +519,8 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
 
    /* TODO: better understand nr_jobs and flags */
    int nr_cpus = util_get_cpu_caps()->nr_cpus;
-   int nr_threads = nr_cpus - 2;
-   int nr_jobs = nr_threads * 2 - 4;
+   int nr_threads = MAX2(nr_cpus - 2, 2);
+   int nr_jobs = 8;
    if (!util_queue_init(&st->codec_queue, "astc_unpack",
                      nr_jobs,
                      nr_threads,
