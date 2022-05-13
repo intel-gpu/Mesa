@@ -2844,7 +2844,7 @@ st_finalize_texture(struct gl_context *ctx,
    unsigned ptWidth;
    uint16_t ptHeight, ptDepth, ptLayers, ptNumSamples;
 
-   if (tObj->Immutable)
+   if (tObj->Immutable && tObj->pt)
       return GL_TRUE;
 
    if (tObj->_MipmapComplete)
@@ -2863,7 +2863,7 @@ st_finalize_texture(struct gl_context *ctx,
    }
 
    /* If this texture comes from a window system, there is nothing else to do. */
-   if (tObj->surface_based) {
+   if (tObj->surface_based && tObj->pt) {
       return GL_TRUE;
    }
 
@@ -3309,6 +3309,9 @@ st_texture_storage(struct gl_context *ctx,
 
    pipe_resource_reference(&texObj->pt, NULL);
 
+   bool compressed_fallback =
+      st_compressed_format_fallback(st, texImage->TexFormat);
+
    if (memObj) {
       texObj->pt = st_texture_create_from_memory(st,
                                                 memObj,
@@ -3321,8 +3324,10 @@ st_texture_storage(struct gl_context *ctx,
                                                 ptDepth,
                                                 ptLayers, num_samples,
                                                 bindings);
+      if (!texObj->pt)
+         return GL_FALSE;
    }
-   else {
+   else if (!compressed_fallback) {
       texObj->pt = st_texture_create(st,
                                     gl_target_to_pipe(texObj->Target),
                                     fmt,
@@ -3333,10 +3338,9 @@ st_texture_storage(struct gl_context *ctx,
                                     ptLayers, num_samples,
                                     bindings,
                                     texObj->IsSparse);
+      if (!texObj->pt)
+         return GL_FALSE;
    }
-
-   if (!texObj->pt)
-      return GL_FALSE;
 
    /* Set image resource pointers */
    for (level = 0; level < levels; level++) {
@@ -3346,15 +3350,19 @@ st_texture_storage(struct gl_context *ctx,
             texObj->Image[face][level];
          pipe_resource_reference(&stImage->pt, texObj->pt);
 
-         compressed_tex_fallback_allocate(st, stImage);
+         if (compressed_fallback)
+            compressed_tex_fallback_allocate(st, stImage);
       }
    }
 
    /* Update gl_texture_object for texture parameter query. */
-   texObj->NumSparseLevels = texObj->pt->nr_sparse_levels;
+   texObj->NumSparseLevels = texObj->pt ? texObj->pt->nr_sparse_levels : 0;
 
-   /* The texture is in a validated state, so no need to check later. */
-   texObj->needs_validation = false;
+   /* The texture is in a validated state, so no need to check later
+    * (except for compressed format fallbacks, where we rely on
+    * st_finalize_texture to transcode the data).
+    */
+   texObj->needs_validation = compressed_fallback;
    texObj->validated_first_level = 0;
    texObj->validated_last_level = levels - 1;
 
