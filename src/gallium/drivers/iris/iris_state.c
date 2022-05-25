@@ -8228,6 +8228,30 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
       flags |= PIPE_CONTROL_DEPTH_STALL;
    }
 
+   /* For gfx12+, "Programming restrictions for PIPE_CONTROL" applies :
+    *
+    * "SW must always set CS Stall bit when Tile Cache Flush Enable bit is
+    * set in the PIPECONTROL command.
+    *
+    * SW must ensure level1 depth and color caches are flushed prior to
+    * flushing the tile cache. This can be achieved by following means:
+    *
+    * Single PIPECONTROL command to flush level1 caches and the tile
+    * cache. Attributes listed below must be set.
+    *
+    * Tile Cache Flush Enable
+    * Render Target Cache Flush Enable
+    * DC Flush Enable
+    * Depth Cache Flush Enable"
+    */
+   if (GFX_VER >= 12 && (flags & PIPE_CONTROL_TILE_CACHE_FLUSH)) {
+      flags |=
+         PIPE_CONTROL_CS_STALL |
+         PIPE_CONTROL_RENDER_TARGET_FLUSH |
+         PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+         PIPE_CONTROL_DATA_CACHE_FLUSH;
+   }
+
    /* Emit --------------------------------------------------------------- */
 
    if (INTEL_DEBUG(DEBUG_PIPE_CONTROL)) {
