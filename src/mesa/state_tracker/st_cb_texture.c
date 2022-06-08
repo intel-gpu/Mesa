@@ -2973,7 +2973,7 @@ st_finalize_texture(struct gl_context *ctx,
    bool compressed_fallback =
       st_compressed_format_fallback(st, firstImage->TexFormat);
    bool transcoding = false;
-   void *uncompressed_data[MAX_FACES][MAX_TEXTURE_LEVELS];
+   uint8_t *uncompressed_data[MAX_FACES][MAX_TEXTURE_LEVELS];
    int64_t time_start = 0;
 
    // XXX: also need to only do this once...or expand...or something
@@ -3010,11 +3010,12 @@ st_finalize_texture(struct gl_context *ctx,
                _mesa_format_image_size(PIPE_FORMAT_R8G8B8A8_UNORM,
                                        texImage->Width2, texImage->Height2,
                                        depth);
-            void *dst = uncompressed_data[face][level] = malloc(size);
+            uint8_t *dst = uncompressed_data[face][level] = malloc(size);
 
             for (unsigned z = 0; z < depth; z++) {
                unsigned y_blocks = DIV_ROUND_UP(texImage->Height2, blk_h);
-               void *src = texImage->compressed_data->ptr + z * y_blocks;
+               void *src = texImage->compressed_data->ptr +
+                           z * stride * y_blocks;
 
                /* Decompress to uncompressed_data[][] */
                if (texImage->TexFormat == MESA_FORMAT_ETC1_RGB8) {
@@ -3055,6 +3056,8 @@ st_finalize_texture(struct gl_context *ctx,
                } else {
                   unreachable("unexpected compressed format fallback");
                }
+
+               dst += 4 * texImage->Width2 * texImage->Height2;
             }
          }
       }
@@ -3136,28 +3139,31 @@ st_finalize_texture(struct gl_context *ctx,
                if (!compressed_fallback) {
                   copy_image_data_to_texture(st, tObj, level, stImage);
                } else {
+                  struct pipe_transfer *transfer;
+                  GLubyte *dest =
+                     pipe_texture_map_3d(st->pipe, tObj->pt, level,
+                                         PIPE_MAP_WRITE, 0, 0, 0,
+                                         stImage->Width, stImage->Height,
+                                         depth, &transfer);
+
                   for (unsigned z = 0; z < depth; z++) {
+                     uint8_t *src = uncompressed_data[face][level] +
+                        z * (4 * stImage->Width2 * stImage->Height2);
                      /* Compress it to the target format. */
                      struct gl_pixelstore_attrib pack = {0};
                      pack.Alignment = 4;
-                     struct pipe_transfer *transfer;
-
-                     GLubyte *dest =
-                        pipe_texture_map_3d(st->pipe, tObj->pt, level,
-                                            PIPE_MAP_WRITE, 0, 0, z,
-                                            stImage->Width, stImage->Height,
-                                            depth, &transfer);
 
                      _mesa_texstore(ctx, 2, GL_RGBA, tObj->pt->format,
                                     transfer->stride, &dest,
                                     transfer->box.width, transfer->box.height,
-                                    1, GL_RGBA, GL_UNSIGNED_BYTE,
-                                    uncompressed_data[face][level], &pack);
+                                    1, GL_RGBA, GL_UNSIGNED_BYTE, src, &pack);
 
-                     pipe_texture_unmap(st->pipe, transfer);
-
-                     free(uncompressed_data[face][level]);
+                     dest += transfer->layer_stride;
                   }
+
+                  pipe_texture_unmap(st->pipe, transfer);
+
+                  free(uncompressed_data[face][level]);
                }
             }
          }
