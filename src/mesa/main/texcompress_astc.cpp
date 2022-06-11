@@ -1948,7 +1948,7 @@ _mesa_unpack_astc_2d_ldr(uint8_t *dst_row,
    free(t_data);
 
    if (VERBOSE_PERF) {
-      printf("Unpack done in %ldus\n", os_time_get() - unpack_start);
+      printf("Unpack done in %" PRId64 "us\n", os_time_get() - unpack_start);
       puts("");
    }
 }
