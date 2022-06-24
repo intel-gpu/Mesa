@@ -310,6 +310,8 @@ Struct("intel_device_info",
         Member("bool", "has_context_isolation"),
         Member("bool", "has_set_pat_uapi"),
         Member("bool", "has_indirect_unroll"),
+        Member("bool", "prelim_drm",
+               comment="i915 is using the forked Linux uapi"),
 
         Member("bool", "has_coarse_pixel_primitive_and_cb", compiler_field=True,
                comment=dedent("""\
