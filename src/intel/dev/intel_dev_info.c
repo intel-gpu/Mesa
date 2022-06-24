@@ -174,6 +174,7 @@ main(int argc, char *argv[])
       fprintf(stdout, "   max CS  threads: %u\n", devinfo.max_cs_threads);
       fprintf(stdout, "   timestamp frequency: %" PRIu64 " / %.4f ns\n",
               devinfo.timestamp_frequency, 1000000000.0 / devinfo.timestamp_frequency);
+      fprintf(stdout, "   dii-prelim: %s\n", devinfo.prelim_drm ? "yes" : "no");
 
       print_regions_info(&devinfo);
    }
