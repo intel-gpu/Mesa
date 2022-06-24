@@ -477,8 +477,7 @@ compressed_tex_fallback_allocate(struct st_context *st,
                                                 texImage->Depth2);
 
    texImage->compressed_data = CALLOC_STRUCT(st_compressed_data);
-   texImage->compressed_data->ptr =
-      malloc(data_size * _mesa_num_tex_faces(texImage->TexObject->Target));
+   texImage->compressed_data->ptr = malloc(data_size);
    pipe_reference_init(&texImage->compressed_data->reference, 1);
 }
 
@@ -525,10 +524,9 @@ st_MapTextureImage(struct gl_context *ctx,
       unsigned block_size = _mesa_get_format_bytes(texImage->TexFormat);
 
       assert(texImage->compressed_data);
-      *mapOut = itransfer->temp_data =
-         texImage->compressed_data->ptr +
-         (z * y_blocks + (y / blk_h)) * stride +
-         (x / blk_w) * block_size;
+      *mapOut = texImage->compressed_data->ptr +
+                (slice * y_blocks + (y / blk_h)) * stride +
+                (x / blk_w) * block_size;
 
       if (mode & GL_MAP_WRITE_BIT) {
          texImage->TexObject->needs_validation = true;
@@ -3139,7 +3137,7 @@ st_finalize_texture(struct gl_context *ctx,
                   struct pipe_transfer *transfer;
                   GLubyte *dest =
                      pipe_texture_map_3d(st->pipe, tObj->pt, level,
-                                         PIPE_MAP_WRITE, 0, 0, 0,
+                                         PIPE_MAP_WRITE, 0, 0, stImage->Face,
                                          stImage->Width, stImage->Height,
                                          depth, &transfer);
 
