@@ -2978,8 +2978,6 @@ st_finalize_texture(struct gl_context *ctx,
 
    // XXX: also need to only do this once...or expand...or something
    if (compressed_fallback) {
-      assert(!tObj->pt);
-
       transcoding = util_format_is_compressed(firstImageFormat);
 
       unsigned blk_w, blk_h;
