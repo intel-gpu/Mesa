@@ -2945,31 +2945,8 @@ st_finalize_texture(struct gl_context *ctx,
       ptNumSamples = firstImage->NumSamples;
    }
 
-   /* If we already have a gallium texture, check that it matches the texture
-    * object's format, target, size, num_levels, etc.
-    */
    int VERBOSE_PERF = 0;
    int VERBOSE_ALPHA = 0;
-   if (tObj->pt) {
-      if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
-          tObj->pt->format != firstImageFormat ||
-          tObj->pt->last_level < tObj->lastLevel ||
-          tObj->pt->width0 != ptWidth ||
-          tObj->pt->height0 != ptHeight ||
-          tObj->pt->depth0 != ptDepth ||
-          tObj->pt->nr_samples != ptNumSamples ||
-          tObj->pt->array_size != ptLayers)
-      {
-         /* The gallium texture does not match the Mesa texture so delete the
-          * gallium texture now.  We'll make a new one below.
-          */
-         pipe_resource_reference(&tObj->pt, NULL);
-         st_texture_release_all_sampler_views(st, tObj);
-         st->dirty |= ST_NEW_FRAMEBUFFER;
-      }
-   }
-
-
    bool compressed_fallback =
       st_compressed_format_fallback(st, firstImage->TexFormat);
    bool transcoding = false;
@@ -3075,6 +3052,28 @@ st_finalize_texture(struct gl_context *ctx,
          firstImageFormat =
             util_format_is_srgb(firstImageFormat) ?
             PIPE_FORMAT_DXT1_SRGB : PIPE_FORMAT_DXT1_RGB;
+      }
+   }
+
+   /* If we already have a gallium texture, check that it matches the texture
+    * object's format, target, size, num_levels, etc.
+    */
+   if (tObj->pt) {
+      if (tObj->pt->target != gl_target_to_pipe(tObj->Target) ||
+          tObj->pt->format != firstImageFormat ||
+          tObj->pt->last_level < tObj->lastLevel ||
+          tObj->pt->width0 != ptWidth ||
+          tObj->pt->height0 != ptHeight ||
+          tObj->pt->depth0 != ptDepth ||
+          tObj->pt->nr_samples != ptNumSamples ||
+          tObj->pt->array_size != ptLayers)
+      {
+         /* The gallium texture does not match the Mesa texture so delete the
+          * gallium texture now.  We'll make a new one below.
+          */
+         pipe_resource_reference(&tObj->pt, NULL);
+         st_texture_release_all_sampler_views(st, tObj);
+         st->dirty |= ST_NEW_FRAMEBUFFER;
       }
    }
 
