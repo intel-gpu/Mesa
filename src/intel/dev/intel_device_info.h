@@ -152,6 +152,11 @@ struct intel_device_info
    bool has_context_isolation;
 
    /**
+    * i915 is using the forked Linux uapi
+    */
+   bool prelim_drm;
+
+   /**
     * \name Intel hardware quirks
     *  @{
     */
