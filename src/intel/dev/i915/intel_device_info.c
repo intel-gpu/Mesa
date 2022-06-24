@@ -35,6 +35,7 @@
 #include "util/os_misc.h"
 
 #include "drm-uapi/i915_drm.h"
+#include "drm-uapi/i915_drm_prelim.h"
 
 /* At some point in time, some people decided to redefine what topology means,
  * from useful HW related information (slice, subslice, etc...), to much less
@@ -323,12 +324,66 @@ query_topology(struct intel_device_info *devinfo, int fd)
 }
 
 /**
+ * Reports memory region info using the forked Linux uapi.
+ */
+static bool
+prelim_query_regions(struct intel_device_info *devinfo, int fd, bool update)
+{
+   struct prelim_drm_i915_query_memory_regions *meminfo =
+      intel_i915_query_alloc(fd, PRELIM_DRM_I915_QUERY_MEMORY_REGIONS, NULL);
+   if (meminfo == NULL)
+      return false;
+
+   for (int i = 0; i < meminfo->num_regions; i++) {
+      const struct prelim_drm_i915_memory_region_info *mem = &meminfo->regions[i];
+      switch (mem->region.memory_class) {
+      case I915_MEMORY_CLASS_SYSTEM:
+         if (!update) {
+            devinfo->mem.sram.mem.klass = mem->region.memory_class;
+            devinfo->mem.sram.mem.instance = mem->region.memory_instance;
+            devinfo->mem.sram.mappable.size = mem->probed_size;
+         } else {
+            assert(devinfo->mem.sram.mem.klass == mem->region.memory_class);
+            assert(devinfo->mem.sram.mem.instance == mem->region.memory_instance);
+            assert(devinfo->mem.sram.mappable.size == mem->probed_size);
+         }
+         if (mem->unallocated_size != -1)
+            devinfo->mem.sram.mappable.free = mem->unallocated_size;
+         break;
+      case I915_MEMORY_CLASS_DEVICE:
+         if (!update) {
+            devinfo->mem.vram.mem.klass = mem->region.memory_class;
+            devinfo->mem.vram.mem.instance = mem->region.memory_instance;
+            devinfo->mem.vram.mappable.size = mem->probed_size;
+         } else {
+            assert(devinfo->mem.vram.mem.klass == mem->region.memory_class);
+            assert(devinfo->mem.vram.mem.instance == mem->region.memory_instance);
+            assert(devinfo->mem.vram.mappable.size == mem->probed_size);
+         }
+         if (mem->unallocated_size != -1)
+            devinfo->mem.vram.mappable.free = mem->unallocated_size;
+         break;
+      default:
+         break;
+      }
+   }
+
+   free(meminfo);
+   devinfo->mem.use_class_instance = true;
+   devinfo->prelim_drm = true;
+   return true;
+}
+
+/**
  * Reports memory region info, and allows buffers to target system-memory,
  * and/or device local memory.
  */
 bool
 intel_device_info_i915_query_regions(struct intel_device_info *devinfo, int fd, bool update)
 {
+   if (prelim_query_regions(devinfo, fd, update))
+      return true;
+
    struct drm_i915_query_memory_regions *meminfo =
       intel_i915_query_alloc(fd, DRM_I915_QUERY_MEMORY_REGIONS, NULL);
    if (meminfo == NULL)
