@@ -305,6 +305,8 @@ Struct("intel_device_info",
         Member("bool", "has_context_isolation"),
         Member("bool", "has_set_pat_uapi"),
         Member("bool", "has_indirect_unroll"),
+        Member("bool", "prelim_drm",
+               comment="i915 is using the forked Linux uapi"),
         Member("bool", "has_negative_rhw_bug", compiler_field=True,
                comment="Intel hardware quirks"),
 

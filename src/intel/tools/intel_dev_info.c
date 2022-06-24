@@ -105,6 +105,7 @@ print_base_devinfo(const struct intel_device_info *devinfo)
    fprintf(stdout, "   max CS  threads: %u\n", devinfo->max_cs_threads);
    fprintf(stdout, "   timestamp frequency: %" PRIu64 " / %.4f ns\n",
            devinfo->timestamp_frequency, 1000000000.0 / devinfo->timestamp_frequency);
+   fprintf(stdout, "   dii-prelim: %s\n", devinfo->prelim_drm ? "yes" : "no");
 
    fprintf(stdout, "   URB size: %u\n", devinfo->urb.size);
    static const char *stage_names[4] = {
