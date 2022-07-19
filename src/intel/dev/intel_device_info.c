@@ -2004,6 +2004,8 @@ intel_i915_get_device_info_from_fd(int fd, struct intel_device_info *devinfo)
    intel_get_aperture_size(fd, &devinfo->aperture_bytes);
    get_context_param(fd, 0, I915_CONTEXT_PARAM_GTT_SIZE, &devinfo->gtt_size);
    devinfo->has_tiling_uapi = has_get_tiling(fd);
+   devinfo->has_caching_uapi =
+      devinfo->platform < INTEL_PLATFORM_DG2_START && !devinfo->has_local_mem;
 
    return true;
 }
