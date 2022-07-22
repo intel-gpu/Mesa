@@ -343,6 +343,10 @@ struct st_context
       bool use_gs;
    } pbo;
 
+   struct {
+      struct hash_table *upload_cs;
+   } compressed_fallback_cache;
+
    /** for drawing with st_util_vertex */
    struct cso_velems_state util_velems;
 

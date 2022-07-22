@@ -42,6 +42,8 @@
 #include "main/pack.h"
 #include "main/pbo.h"
 #include "main/pixeltransfer.h"
+#include "main/shaderapi.h"
+#include "main/shaderobj.h"
 #include "main/texcompress.h"
 #include "main/texcompress_astc.h"
 #include "main/texcompress_bptc.h"
@@ -69,6 +71,7 @@
 
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
+#include "util/hash_table.h"
 #include "util/u_inlines.h"
 #include "util/u_upload_mgr.h"
 #include "pipe/p_shader_tokens.h"
@@ -80,6 +83,7 @@
 #include "util/u_box.h"
 #include "util/u_memory.h"
 #include "util/u_simple_shaders.h"
+#include "util/u_string.h"
 #include "cso_cache/cso_context.h"
 #include "tgsi/tgsi_ureg.h"
 
@@ -481,6 +485,81 @@ compressed_tex_fallback_allocate(struct st_context *st,
    pipe_reference_init(&texImage->compressed_data->reference, 1);
 }
 
+/* Destroys the cache used for various compressed format fallback operations.
+ *
+ * There is no explicit cache creation function. Rather, it is created
+ * on-demand through various functions relating to the compressed format
+ * fallback.
+ */
+void
+st_destroy_compressed_fallback_cache(struct st_context *st)
+{
+   /* Destroy the hash table of gl_shader_programs.
+    *
+    * The shader programs are part of the gl_context. So, they are
+    * automatically destroyed when the context is destroyed (via
+    * _mesa_free_context_data -> ... -> free_shader_program_data_cb).
+    */
+   _mesa_hash_table_destroy(st->compressed_fallback_cache.upload_cs, NULL);
+}
+
+/* Get a gl_program from a shader source created by sprintf-ing the variable
+ * arguments into the key_shader string.
+ *
+ * This function has an internal cache keyed on the key_shader address.
+ */
+static struct gl_program *
+get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
+{
+   /* Initialize the program cache if non-existent. */
+   if (!st->compressed_fallback_cache.upload_cs) {
+      st->compressed_fallback_cache.upload_cs =
+         _mesa_pointer_hash_table_create(NULL);
+      if (!st->compressed_fallback_cache.upload_cs)
+         return NULL;
+   }
+
+   /* Try to get the program from the cache. */
+   struct hash_entry *entry =
+      _mesa_hash_table_search(st->compressed_fallback_cache.upload_cs,
+                              key_shader);
+   if (entry) {
+      struct gl_shader_program *shProg =
+         (struct gl_shader_program *)entry->data;
+      return shProg->_LinkedShaders[MESA_SHADER_COMPUTE]->Program;
+   }
+
+   /* Cache miss. Create the final shader string. */
+   char *final_shader;
+   va_list ap;
+   va_start(ap, key_shader);
+   int num_printed_bytes = vasprintf(&final_shader, key_shader, ap);
+   va_end(ap);
+   if (num_printed_bytes == -1)
+      return NULL;
+
+   /* Compile and link the shader. Then, destroy the shader string. */
+   const char *strings[] = { final_shader };
+   GLuint program =
+      _mesa_CreateShaderProgramv_impl(st->ctx, GL_COMPUTE_SHADER, 1, strings);
+   free(final_shader);
+
+   struct gl_shader_program *shProg =
+      _mesa_lookup_shader_program(st->ctx, program);
+   if (!shProg)
+      return NULL;
+
+   if (shProg->data->LinkStatus == LINKING_FAILURE) {
+      _mesa_reference_shader_program(st->ctx, &shProg, NULL);
+      return NULL;
+   }
+
+   /* Cache the program and check the cache again. */
+   _mesa_hash_table_insert(st->compressed_fallback_cache.upload_cs,
+                           key_shader, shProg);
+
+   return get_compressed_fallback_cp(st, key_shader);
+}
 
 void
 st_MapTextureImage(struct gl_context *ctx,

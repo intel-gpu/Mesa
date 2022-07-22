@@ -48,6 +48,7 @@
 #include "st_cb_eglimage.h"
 #include "st_cb_feedback.h"
 #include "st_cb_flush.h"
+#include "st_cb_texture.h"
 #include "st_atom.h"
 #include "st_draw.h"
 #include "st_extensions.h"
@@ -378,6 +379,7 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    st_destroy_drawpix(st);
    st_destroy_drawtex(st);
    st_destroy_pbo_helpers(st);
+   st_destroy_compressed_fallback_cache(st);
    st_destroy_bound_texture_handles(st);
    st_destroy_bound_image_handles(st);
 
