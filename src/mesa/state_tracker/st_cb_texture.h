@@ -125,4 +125,6 @@ void st_TexturePageCommitment(struct gl_context *ctx,
                               struct gl_texture_object *tex_obj,
                               int level, int xoffset, int yoffset, int zoffset,
                               int width, int height, int depth, bool commit);
+
+void st_destroy_compressed_fallback_cache(struct st_context *st);
 #endif /* ST_CB_TEXTURE_H */
