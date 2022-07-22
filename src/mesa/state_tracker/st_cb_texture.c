@@ -27,6 +27,7 @@
 
 #include <stdio.h>
 #include "main/bufferobj.h"
+#include "main/context.h"
 #include "main/enums.h"
 #include "main/errors.h"
 #include "main/fbobject.h"
@@ -54,6 +55,7 @@
 #include "main/teximage.h"
 #include "main/texobj.h"
 #include "main/texstore.h"
+#include "main/uniforms.h"
 
 #include "state_tracker/bc1_tables.h"
 #include "state_tracker/st_debug.h"
@@ -64,11 +66,19 @@
 #include "state_tracker/st_cb_texture.h"
 #include "state_tracker/st_format.h"
 #include "state_tracker/st_pbo.h"
+#include "state_tracker/st_program.h"
 #include "state_tracker/st_texture.h"
 #include "state_tracker/st_gen_mipmap.h"
 #include "state_tracker/st_atom.h"
+#include "state_tracker/st_atom_constbuf.h"
 #include "state_tracker/st_sampler_view.h"
 #include "state_tracker/st_util.h"
+
+#include "compiler/glsl/cross_platform_settings_piece_all.h"
+#include "compiler/glsl/uav_cross_platform_piece_all.h"
+#include "compiler/glsl/bc1_glsl.h"
+#include "compiler/glsl/bc4_glsl.h"
+#include "compiler/glsl/etc2_rgba_stitch_glsl.h"
 
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
@@ -608,6 +618,410 @@ get_bc1_endpoint_ssbo(struct st_context *st)
    return get_bc1_endpoint_ssbo(st);
 }
 
+static void
+bind_compute_state(struct st_context *st,
+                   struct gl_program *prog,
+                   struct pipe_sampler_view **sampler_views,
+                   const struct pipe_shader_buffer *shader_buffers,
+                   const struct pipe_image_view *image_views,
+                   bool cs_handle_from_prog,
+                   bool constbuf0_from_prog)
+{
+   assert(prog->info.stage == PIPE_SHADER_COMPUTE);
+
+   /* Set compute states in the same order as defined in st_atom_list.h */
+
+   assert(prog->affected_states & ST_NEW_CS_STATE);
+   assert(st->shader_has_one_variant[PIPE_SHADER_COMPUTE]);
+   cso_set_compute_shader_handle(st->cso_context,
+                                 cs_handle_from_prog ?
+                                 prog->variants->driver_shader : NULL);
+
+   if (prog->affected_states & ST_NEW_SAMPLER_VIEWS) {
+      st->pipe->set_sampler_views(st->pipe, prog->info.stage, 0,
+                                  prog->info.num_textures, 0, false,
+                                  sampler_views);
+   }
+
+   if (prog->affected_states & ST_NEW_SAMPLERS) {
+      /* Programs seem to set this bit more often than needed. For example, if
+       * a program only uses texelFetch, this shouldn't be needed. Section
+       * "11.1.3.2 Texel Fetches", of the GL 4.6 spec says:
+       *
+       *    Texel fetch proceeds similarly to the steps described for texture
+       *    access in section 11.1.3.5, with the exception that none of the
+       *    operations controlled by sampler object state are performed,
+       *
+       * We assume that the caller is using texelFetch or doesn't care about
+       * this state for a similar reason.
+       */
+   }
+
+   if (prog->affected_states & ST_NEW_CS_CONSTANTS) {
+      st_upload_constants(st, constbuf0_from_prog ? prog : NULL,
+                          prog->info.stage);
+   }
+
+   if (prog->affected_states & ST_NEW_CS_UBOS) {
+      unreachable("Uniform buffer objects not handled");
+   }
+
+   if (prog->affected_states & ST_NEW_CS_ATOMICS) {
+      unreachable("Atomic buffer objects not handled");
+   }
+
+   if (prog->affected_states & ST_NEW_CS_SSBOS) {
+      st->pipe->set_shader_buffers(st->pipe, prog->info.stage, 0,
+                                   prog->info.num_ssbos, shader_buffers,
+                                   prog->sh.ShaderStorageBlocksWriteAccess);
+   }
+
+   if (prog->affected_states & ST_NEW_CS_IMAGES) {
+      st->pipe->set_shader_images(st->pipe, prog->info.stage, 0,
+                                  prog->info.num_images, 0, image_views);
+   }
+}
+
+static void
+dispatch_compute_state(struct st_context *st,
+                       struct gl_program *prog,
+                       struct pipe_sampler_view **sampler_views,
+                       const struct pipe_shader_buffer *shader_buffers,
+                       const struct pipe_image_view *image_views,
+                       unsigned num_workgroups_x,
+                       unsigned num_workgroups_y,
+                       unsigned num_workgroups_z)
+{
+   assert(prog->info.stage == PIPE_SHADER_COMPUTE);
+
+   /* Bind the state */
+   bind_compute_state(st, prog, sampler_views, shader_buffers, image_views,
+                      true, true);
+
+   /* Launch the grid */
+   const struct pipe_grid_info info = {
+      .block[0] = prog->info.workgroup_size[0],
+      .block[1] = prog->info.workgroup_size[1],
+      .block[2] = prog->info.workgroup_size[2],
+      .grid[0] = num_workgroups_x,
+      .grid[1] = num_workgroups_y,
+      .grid[2] = num_workgroups_z,
+   };
+
+   st->pipe->launch_grid(st->pipe, &info);
+
+   /* Unbind the state */
+   bind_compute_state(st, prog, NULL, NULL, NULL, false, false);
+
+   /* If the previously used compute program was relying on any state that was
+    * trampled on by these state changes, dirty the relevant flags.
+    */
+   if (st->cp)
+      st->dirty |= st->cp->affected_states & prog->affected_states;
+}
+
+
+static bool
+sw_decode_astc(struct st_context *st,
+               struct pipe_resource **out_tex,
+               struct st_texture_image_transfer *itransfer,
+               mesa_format format)
+{
+   assert(*out_tex == NULL);
+
+   /* Create the RGBA8 destination */
+   *out_tex =
+      st_texture_create(st, PIPE_TEXTURE_2D, PIPE_FORMAT_R8G8B8A8_UNORM, 0,
+                        itransfer->box.width,
+                        itransfer->box.height, 1, 1, 0,
+                        PIPE_BIND_SAMPLER_VIEW, false);
+   if (!*out_tex)
+      return false;
+
+   /* Temporarily map the destination and decode into the returned pointer */
+   struct pipe_transfer *rgba8_xfer;
+   void *rgba8_map = pipe_texture_map(st->pipe, *out_tex, 0, 0,
+                                      PIPE_MAP_WRITE |
+                                      PIPE_MAP_DISCARD_RANGE, 0, 0,
+                                      itransfer->box.width,
+                                      itransfer->box.height, &rgba8_xfer);
+   if (!rgba8_map) {
+      pipe_resource_reference(out_tex, NULL);
+      return false;
+   }
+
+   _mesa_unpack_astc_2d_ldr(rgba8_map, rgba8_xfer->stride,
+                            itransfer->temp_data,
+                            itransfer->temp_stride,
+                            itransfer->box.width,
+                            itransfer->box.height, format);
+
+   pipe_texture_unmap(st->pipe, rgba8_xfer);
+
+   return true;
+}
+
+static bool
+cs_encode_bc1(struct st_context *st,
+              struct pipe_resource **out_tex,
+              struct pipe_resource *rgba8_tex,
+              bool high_quality)
+{
+   assert(*out_tex == NULL);
+
+   /* Create the required compute state */
+   struct gl_program *prog =
+      get_compressed_fallback_cp(st, bc1_source,
+                                 cross_platform_settings_piece_all_header,
+                                 uav_cross_platform_piece_all_header);
+   if (!prog)
+      return false;
+
+   const struct pipe_shader_buffer sb = {
+      .buffer = get_bc1_endpoint_ssbo(st),
+      .buffer_size = BC1_ENDPOINT_SSBO_SIZE,
+   };
+   if (!sb.buffer)
+      return false;
+
+   const struct pipe_sampler_view templ = {
+      .target = PIPE_TEXTURE_2D,
+      .format = PIPE_FORMAT_R8G8B8A8_UNORM,
+      .swizzle_r = PIPE_SWIZZLE_X,
+      .swizzle_g = PIPE_SWIZZLE_Y,
+      .swizzle_b = PIPE_SWIZZLE_Z,
+      .swizzle_a = PIPE_SWIZZLE_W,
+   };
+   struct pipe_sampler_view *rgba8_view =
+      st->pipe->create_sampler_view(st->pipe, rgba8_tex, &templ);
+   if (!rgba8_view)
+      return false;
+
+   const struct pipe_image_view image = {
+      .format = PIPE_FORMAT_R16G16B16A16_UINT,
+      .access = PIPE_IMAGE_ACCESS_WRITE,
+      .shader_access = PIPE_IMAGE_ACCESS_WRITE,
+      .resource = *out_tex =
+         st_texture_create(st, PIPE_TEXTURE_2D,
+                           PIPE_FORMAT_R32G32_UINT, 0,
+                           DIV_ROUND_UP(rgba8_tex->width0, 4),
+                           DIV_ROUND_UP(rgba8_tex->height0, 4), 1, 1, 0,
+                           PIPE_BIND_SHADER_IMAGE |
+                           PIPE_BIND_SAMPLER_VIEW, false),
+   };
+   if (!image.resource)
+      goto release_sampler_views;
+
+   /* Pick an iteration count for refining the output quality */
+   const unsigned num_refinements = high_quality ? 2 : 1;
+   _mesa_uniform(0, 1, &num_refinements, st->ctx, prog->shader_program,
+                 GLSL_TYPE_UINT, 1);
+
+   /* Dispatch the compute state */
+   dispatch_compute_state(st, prog, &rgba8_view, &sb, &image,
+                          DIV_ROUND_UP(rgba8_tex->width0, 32),
+                          DIV_ROUND_UP(rgba8_tex->height0, 32), 1);
+
+release_sampler_views:
+   pipe_sampler_view_reference(&rgba8_view, NULL);
+
+   return *out_tex != NULL;
+}
+
+static bool
+cs_encode_bc4(struct st_context *st,
+              struct pipe_resource **out_tex,
+              struct pipe_resource *rgba8_tex,
+              unsigned channel_idx, bool use_snorm)
+{
+   assert(*out_tex == NULL);
+
+   /* Create the required compute state */
+   struct gl_program *prog =
+      get_compressed_fallback_cp(st, bc4_source,
+                                 cross_platform_settings_piece_all_header,
+                                 uav_cross_platform_piece_all_header);
+   if (!prog)
+      return false;
+
+   const struct pipe_sampler_view templ = {
+      .target = PIPE_TEXTURE_2D,
+      .format = PIPE_FORMAT_R8G8B8A8_UNORM,
+      .swizzle_r = PIPE_SWIZZLE_X,
+      .swizzle_g = PIPE_SWIZZLE_Y,
+      .swizzle_b = PIPE_SWIZZLE_Z,
+      .swizzle_a = PIPE_SWIZZLE_W,
+   };
+   struct pipe_sampler_view *rgba8_view =
+      st->pipe->create_sampler_view(st->pipe, rgba8_tex, &templ);
+   if (!rgba8_view)
+      return false;
+
+   const struct pipe_image_view image = {
+      .format = PIPE_FORMAT_R16G16B16A16_UINT,
+      .access = PIPE_IMAGE_ACCESS_WRITE,
+      .shader_access = PIPE_IMAGE_ACCESS_WRITE,
+      .resource = *out_tex =
+         st_texture_create(st, PIPE_TEXTURE_2D,
+                           PIPE_FORMAT_R32G32_UINT, 0,
+                           DIV_ROUND_UP(rgba8_tex->width0, 4),
+                           DIV_ROUND_UP(rgba8_tex->height0, 4), 1, 1, 0,
+                           PIPE_BIND_SHADER_IMAGE |
+                           PIPE_BIND_SAMPLER_VIEW, false),
+   };
+   if (!image.resource)
+      goto release_sampler_views;
+
+   /* Pick the input channel to encode and whether to encode as snorm.
+    *
+    * XXX: The shader actually doesn't support encoding channel index 2.
+    */
+   assert(channel_idx <= 1 || channel_idx == 3);
+   const unsigned params[] = { channel_idx, use_snorm };
+   _mesa_uniform(0, 1, params, st->ctx, prog->shader_program,
+                 GLSL_TYPE_UINT, 2);
+
+   /* Dispatch the compute state */
+   dispatch_compute_state(st, prog, &rgba8_view, NULL, &image, 1,
+                          DIV_ROUND_UP(rgba8_tex->width0, 16),
+                          DIV_ROUND_UP(rgba8_tex->height0, 16));
+
+release_sampler_views:
+   pipe_sampler_view_reference(&rgba8_view, NULL);
+
+   return *out_tex != NULL;
+}
+
+static bool
+cs_stitch_64bpb_textures(struct st_context *st,
+                         struct pipe_resource **out_tex,
+                         struct pipe_resource *tex_hi,
+                         struct pipe_resource *tex_lo)
+{
+   assert(*out_tex == NULL);
+   assert(util_format_get_blocksizebits(tex_hi->format) == 64);
+   assert(util_format_get_blocksizebits(tex_lo->format) == 64);
+   assert(tex_hi->width0 == tex_lo->width0);
+   assert(tex_hi->height0 == tex_lo->height0);
+
+   /* Create the required compute state */
+   struct gl_program *prog =
+      get_compressed_fallback_cp(st, etc2_rgba_stitch_source,
+                                 cross_platform_settings_piece_all_header,
+                                 uav_cross_platform_piece_all_header);
+   if (!prog)
+      return false;
+
+   const struct pipe_sampler_view templ = {
+      .target = PIPE_TEXTURE_2D,
+      .format = PIPE_FORMAT_R32G32_UINT,
+      .swizzle_r = PIPE_SWIZZLE_X,
+      .swizzle_g = PIPE_SWIZZLE_Y,
+      .swizzle_b = PIPE_SWIZZLE_0,
+      .swizzle_a = PIPE_SWIZZLE_1,
+   };
+   struct pipe_sampler_view *rg32_views[2] = {
+      [0] = st->pipe->create_sampler_view(st->pipe, tex_hi, &templ),
+      [1] = st->pipe->create_sampler_view(st->pipe, tex_lo, &templ),
+   };
+   if (!rg32_views[0] || !rg32_views[1])
+      goto release_sampler_views;
+
+   const struct pipe_image_view image = {
+      .format = PIPE_FORMAT_R32G32B32A32_UINT,
+      .access = PIPE_IMAGE_ACCESS_WRITE,
+      .shader_access = PIPE_IMAGE_ACCESS_WRITE,
+      .resource = *out_tex =
+         st_texture_create(st, PIPE_TEXTURE_2D,
+                           PIPE_FORMAT_R32G32B32A32_UINT, 0,
+                           tex_hi->width0,
+                           tex_hi->height0, 1, 1, 0,
+                           PIPE_BIND_SHADER_IMAGE |
+                           PIPE_BIND_SAMPLER_VIEW, false),
+   };
+   if (!image.resource)
+      goto release_sampler_views;
+
+   /* Dispatch the compute state */
+   dispatch_compute_state(st, prog, rg32_views, NULL, &image,
+                          DIV_ROUND_UP(tex_hi->width0 * 4, 32),
+                          DIV_ROUND_UP(tex_hi->height0 * 4, 32), 1);
+
+release_sampler_views:
+   pipe_sampler_view_reference(&rg32_views[0], NULL);
+   pipe_sampler_view_reference(&rg32_views[1], NULL);
+
+   return *out_tex != NULL;
+}
+
+/* An unmap path for ASTC textures that aren't supported natively and have
+ * DXT5 as the fallback format.
+ *
+ * Transcodes ASTC data to DXT5 with compute shaders and blits the result to
+ * texImage.
+ */
+static bool
+unmap_cs_transcode_astc_to_dxt5(struct st_context *st,
+                                struct gl_texture_image *texImage,
+                                struct st_texture_image_transfer *itransfer)
+{
+   assert(_mesa_has_compute_shaders(st->ctx));
+   assert(_mesa_is_format_astc_2d(texImage->TexFormat));
+   assert(texImage->pt->format == PIPE_FORMAT_DXT5_RGBA ||
+          texImage->pt->format == PIPE_FORMAT_DXT5_SRGBA);
+
+   /* Transcode into an intermediate DXT5/BC3 texture.
+    *
+    * XXX: The barrier at the end is technically incorrect. GL doesn't provide
+    * a guarantee that glCopyImageSubData will work with it (or any barrier
+    * for that matter). For now, this at least works on drivers which
+    * implement resource_copy_region with texelFetch.
+    */
+   struct pipe_resource *rgba8_tex = NULL;
+   struct pipe_resource *bc1_tex = NULL;
+   struct pipe_resource *bc4_tex = NULL;
+   struct pipe_resource *bc3_tex = NULL;
+
+   if (!sw_decode_astc(st, &rgba8_tex, itransfer, texImage->TexFormat))
+      return false;
+
+   if (!cs_encode_bc1(st, &bc1_tex, rgba8_tex, true))
+      goto release_textures;
+
+   if (!cs_encode_bc4(st, &bc4_tex, rgba8_tex, 3, false))
+      goto release_textures;
+
+   st->pipe->memory_barrier(st->pipe, PIPE_BARRIER_TEXTURE);
+
+   if (!cs_stitch_64bpb_textures(st, &bc3_tex, bc1_tex, bc4_tex))
+      goto release_textures;
+
+   /* Copy the intermediate texture to the final destination. */
+   st->pipe->memory_barrier(st->pipe, PIPE_BARRIER_TEXTURE);
+
+   struct pipe_box src_box;
+   u_box_2d_zslice(0, 0, 0, bc3_tex->width0, bc3_tex->height0, &src_box);
+
+   assert(itransfer->box.depth == 1);
+   st->pipe->resource_copy_region(st->pipe, texImage->pt,
+                                  st_texture_image_level(texImage),
+                                  itransfer->box.x,
+                                  itransfer->box.y,
+                                  itransfer->box.z, bc3_tex, 0, &src_box);
+
+   /* Mark the unmap as complete. */
+   assert(itransfer->transfer == NULL);
+   memset(itransfer, 0, sizeof(struct st_texture_image_transfer));
+
+release_textures:
+   pipe_resource_reference(&rgba8_tex, NULL);
+   pipe_resource_reference(&bc1_tex, NULL);
+   pipe_resource_reference(&bc4_tex, NULL);
+   pipe_resource_reference(&bc3_tex, NULL);
+
+   return itransfer->box.depth == 0;
+}
+
 void
 st_MapTextureImage(struct gl_context *ctx,
                    struct gl_texture_image *texImage,
@@ -682,6 +1096,19 @@ st_UnmapTextureImage(struct gl_context *ctx,
 
       if (itransfer->box.depth != 0) {
          assert(itransfer->box.depth == 1);
+
+         if (_mesa_has_compute_shaders(ctx) &&
+             st->prefer_blit_based_texture_transfer &&
+             util_format_is_compressed(texImage->pt->format)) {
+
+            /* Transcoding is currently only supported from ASTC to DXT5 */
+            assert(_mesa_is_format_astc_2d(texImage->TexFormat));
+            assert(texImage->pt->format == PIPE_FORMAT_DXT5_RGBA ||
+                   texImage->pt->format == PIPE_FORMAT_DXT5_SRGBA);
+
+            if (unmap_cs_transcode_astc_to_dxt5(st, texImage, itransfer))
+               return;
+         }
 
          struct pipe_transfer *transfer;
          GLubyte *map = st_texture_image_map(st, texImage,
