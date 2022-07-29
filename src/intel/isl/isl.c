@@ -675,7 +675,8 @@ isl_surf_choose_tiling(const struct isl_device *dev,
        isl_align_div_npot(info->height, fmtl->bh) *  fmtl->bpb / 8;
 
    if (info->levels == 1 && info->array_len == 1 &&
-       info->row_pitch_B <= 64 && slice0_size_B <= 64) {
+       info->row_pitch_B <= 64 && slice0_size_B <= 64 &&
+       fmtl->txc != ISL_TXC_ASTC) {
       /* Prefer linear for surfaces that fit within a cacheline. For this
        * size, there should be no benefit to using tiling. See the reasons
        * listed above for more.
