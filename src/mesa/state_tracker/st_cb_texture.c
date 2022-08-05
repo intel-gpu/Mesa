@@ -3137,7 +3137,7 @@ st_finalize_texture(struct gl_context *ctx,
                   struct pipe_transfer *transfer;
                   GLubyte *dest =
                      pipe_texture_map_3d(st->pipe, tObj->pt, level,
-                                         PIPE_MAP_WRITE, 0, 0, stImage->Face,
+                                         PIPE_MAP_WRITE | PIPE_MAP_DISCARD_RANGE, 0, 0, stImage->Face,
                                          stImage->Width, stImage->Height,
                                          depth, &transfer);
 
