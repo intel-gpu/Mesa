@@ -792,6 +792,10 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
                                         BITFIELD_BIT(PIPE_PRIM_PATCHES);
    st->active_states = _mesa_get_active_states(ctx);
 
+   /* Driver does not support ASTC, initialize astc decoder lookup tables. */
+   if (!st->has_astc_2d_ldr)
+      _mesa_init_astc_decoder_luts(&st->astc_lut_holder);
+
    return st;
 }
 
