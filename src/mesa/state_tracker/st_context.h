@@ -40,6 +40,8 @@
 #include "util/list.h"
 #include "cso_cache/cso_context.h"
 
+/* Lookup tables for astc decoding. */
+#include "main/texcompress_astc_decoder_wrap.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -397,6 +399,8 @@ struct st_context
    } zombie_shaders;
 
    struct hash_table *hw_select_shaders;
+
+   astc_decoder_lut_holder astc_lut_holder;
 };
 
 
