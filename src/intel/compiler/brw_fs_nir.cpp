@@ -2001,6 +2001,150 @@ emit_pixel_interpolater_send(const fs_builder &bld,
    return inst;
 }
 
+static fs_reg
+fetch_polygon_reg(const fs_builder &bld, unsigned reg, unsigned subreg)
+{
+   const fs_visitor *shader = static_cast<const fs_visitor *>(bld.shader);
+   assert(shader->stage == MESA_SHADER_FRAGMENT);
+
+   const struct intel_device_info *devinfo = shader->devinfo;
+   const unsigned poly_width = shader->dispatch_width / shader->max_polygons;
+   const unsigned poly_idx = bld.group() / poly_width;
+   assert(bld.group() % poly_width == 0);
+
+   if (bld.dispatch_width() > poly_width) {
+      assert(bld.dispatch_width() <= 2 * poly_width);
+      const unsigned reg_size = reg_unit(devinfo) * REG_SIZE;
+      const unsigned vstride = reg_size / brw_type_size_bytes(BRW_TYPE_F);
+      return stride(brw_vec1_grf(reg + reg_unit(devinfo) * poly_idx, subreg),
+                    vstride, poly_width, 0);
+   } else {
+      return brw_vec1_grf(reg + reg_unit(devinfo) * poly_idx, subreg);
+   }
+}
+
+static void
+emit_pixel_interpolater_alu_at_offset(const fs_builder &bld,
+                                      const fs_reg &dst,
+                                      const fs_reg &offs,
+                                      glsl_interp_mode interpolation)
+{
+   const fs_visitor *shader = static_cast<const fs_visitor *>(bld.shader);
+   assert(shader->stage == MESA_SHADER_FRAGMENT);
+
+   const intel_device_info *devinfo = shader->devinfo;
+   const fs_thread_payload &payload = shader->fs_payload();
+   const struct brw_wm_prog_data *wm_prog_data =
+      brw_wm_prog_data(shader->prog_data);
+
+   if (interpolation == INTERP_MODE_NOPERSPECTIVE) {
+      assert(wm_prog_data->uses_npc_bary_coefficients &&
+             wm_prog_data->uses_nonperspective_interp_modes);
+   } else {
+      assert(interpolation == INTERP_MODE_SMOOTH);
+      assert(wm_prog_data->uses_pc_bary_coefficients &&
+             wm_prog_data->uses_depth_w_coefficients);
+   }
+
+   /* Account for half-pixel X/Y coordinate offset. */
+   const fs_reg off_x = bld.vgrf(BRW_TYPE_F);
+   bld.ADD(off_x, offs, brw_imm_f(0.5));
+
+   const fs_reg off_y = bld.vgrf(BRW_TYPE_F);
+   bld.ADD(off_y, offset(offs, bld, 1), brw_imm_f(0.5));
+
+   /* Process no more than two polygons at a time to avoid hitting
+    * regioning restrictions.
+    */
+   const unsigned poly_width = shader->dispatch_width / shader->max_polygons;
+
+   for (unsigned i = 0; i < DIV_ROUND_UP(shader->max_polygons, 2); i++) {
+      const fs_builder ibld = bld.group(MIN2(bld.dispatch_width(), 2 * poly_width), i);
+
+      /* Fetch needed parameters from the thread payload. */
+      const unsigned bary_coef_reg = interpolation == INTERP_MODE_NOPERSPECTIVE ?
+         payload.npc_bary_coef_reg : payload.pc_bary_coef_reg;
+      const fs_reg start_x = fetch_polygon_reg(ibld, bary_coef_reg,
+                                               devinfo->ver >= 20 ? 6 : 2);
+      const fs_reg start_y = fetch_polygon_reg(ibld, bary_coef_reg,
+                                               devinfo->ver >= 20 ? 7 : 6);
+
+      const fs_reg bary1_c0 = fetch_polygon_reg(ibld, bary_coef_reg,
+                                                devinfo->ver >= 20 ? 2 : 3);
+      const fs_reg bary1_cx = fetch_polygon_reg(ibld, bary_coef_reg, 1);
+      const fs_reg bary1_cy = fetch_polygon_reg(ibld, bary_coef_reg, 0);
+
+      const fs_reg bary2_c0 = fetch_polygon_reg(ibld, bary_coef_reg,
+                                                devinfo->ver >= 20 ? 5 : 7);
+      const fs_reg bary2_cx = fetch_polygon_reg(ibld, bary_coef_reg,
+                                                devinfo->ver >= 20 ? 4 : 5);
+      const fs_reg bary2_cy = fetch_polygon_reg(ibld, bary_coef_reg,
+                                                devinfo->ver >= 20 ? 3 : 4);
+
+      const fs_reg rhw_c0 = devinfo->ver >= 20 ?
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg + 1, 5) :
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg, 7);
+      const fs_reg rhw_cx = devinfo->ver >= 20 ?
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg + 1, 4) :
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg, 5);
+      const fs_reg rhw_cy = devinfo->ver >= 20 ?
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg + 1, 3) :
+         fetch_polygon_reg(ibld, payload.depth_w_coef_reg, 4);
+
+      /* Compute X/Y coordinate deltas relative to the origin of the polygon. */
+      const fs_reg delta_x = ibld.vgrf(BRW_TYPE_F);
+      ibld.ADD(delta_x, offset(shader->pixel_x, ibld, i), negate(start_x));
+      ibld.ADD(delta_x, delta_x, offset(off_x, ibld, i));
+
+      const fs_reg delta_y = ibld.vgrf(BRW_TYPE_F);
+      ibld.ADD(delta_y, offset(shader->pixel_y, ibld, i), negate(start_y));
+      ibld.ADD(delta_y, delta_y, offset(off_y, ibld, i));
+
+      /* Perform linear interpolation at the supported accumulator
+       * width.
+       */
+      const unsigned acc_width = 16 * reg_unit(devinfo);
+      const fs_reg rhw = ibld.vgrf(BRW_TYPE_F);
+      const fs_reg bary1 = ibld.vgrf(BRW_TYPE_F);
+      const fs_reg bary2 = ibld.vgrf(BRW_TYPE_F);
+
+      for (unsigned j = 0; j < DIV_ROUND_UP(ibld.dispatch_width(), acc_width); j++) {
+         const fs_builder jbld = ibld.group(MIN2(ibld.dispatch_width(), acc_width), j);
+         const fs_reg acc = suboffset(brw_acc_reg(16), jbld.group() % acc_width);
+
+         if (interpolation != INTERP_MODE_NOPERSPECTIVE) {
+            jbld.MAD(acc, horiz_offset(rhw_c0, acc_width * j),
+                     horiz_offset(rhw_cx, acc_width * j), offset(delta_x, jbld, j));
+            jbld.MAC(offset(rhw, jbld, j),
+                     horiz_offset(rhw_cy, acc_width * j), offset(delta_y, jbld, j));
+         }
+
+         jbld.MAD(acc, horiz_offset(bary1_c0, acc_width * j),
+                  horiz_offset(bary1_cx, acc_width * j), offset(delta_x, jbld, j));
+         jbld.MAC(offset(bary1, jbld, j),
+                  horiz_offset(bary1_cy, acc_width * j), offset(delta_y, jbld, j));
+
+         jbld.MAD(acc, horiz_offset(bary2_c0, acc_width * j),
+                  horiz_offset(bary2_cx, acc_width * j), offset(delta_x, jbld, j));
+         jbld.MAC(offset(bary2, jbld, j),
+                  horiz_offset(bary2_cy, acc_width * j), offset(delta_y, jbld, j));
+      }
+
+      /* Scale the results dividing by the interpolated RHW if they're
+       * required to be perspective-correct.
+       */
+      if (interpolation == INTERP_MODE_NOPERSPECTIVE) {
+         ibld.MOV(offset(dst, ibld, i), bary1);
+         ibld.MOV(offset(offset(dst, bld, 1), ibld, i), bary2);
+      } else {
+         const fs_reg w = ibld.vgrf(BRW_TYPE_F);
+         ibld.emit(SHADER_OPCODE_RCP, w, rhw);
+         ibld.MUL(offset(dst, ibld, i), bary1, w);
+         ibld.MUL(offset(offset(dst, bld, 1), ibld, i), bary2, w);
+      }
+   }
+}
+
 /**
  * Computes 1 << x, given a D/UD register containing some value x.
  */
@@ -4073,9 +4217,13 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
       const glsl_interp_mode interpolation =
          (enum glsl_interp_mode) nir_intrinsic_interp_mode(instr);
 
-      nir_const_value *const_offset = nir_src_as_const_value(instr->src[0]);
+      if (devinfo->ver >= 20) {
+         emit_pixel_interpolater_alu_at_offset(
+            bld, dest,
+            retype(get_nir_src(instr->src[0]), BRW_TYPE_F),
+            interpolation);
 
-      if (const_offset) {
+      } else if (nir_const_value *const_offset = nir_src_as_const_value(instr->src[0])) {
          assert(nir_src_bit_size(instr->src[0]) == 32);
          unsigned off_x = const_offset[0].u32 & 0xf;
          unsigned off_y = const_offset[1].u32 & 0xf;
