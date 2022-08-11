@@ -2145,6 +2145,45 @@ emit_pixel_interpolater_alu_at_offset(const fs_builder &bld,
    }
 }
 
+static void
+emit_pixel_interpolater_alu_at_sample(const fs_builder &bld,
+                                      const fs_reg &dst,
+                                      const fs_reg &idx,
+                                      glsl_interp_mode interpolation)
+{
+   const fs_visitor *shader = static_cast<const fs_visitor *>(bld.shader);
+   const fs_thread_payload &payload = shader->fs_payload();
+   const struct brw_wm_prog_data *wm_prog_data =
+      brw_wm_prog_data(shader->prog_data);
+   const fs_builder ubld = bld.exec_all().group(16, 0);
+   const fs_reg sample_offs_xy = ubld.vgrf(BRW_TYPE_UD);
+   assert(wm_prog_data->uses_sample_offsets);
+
+   for (unsigned i = 0; i < 2; i++) {
+      const fs_reg reg = retype(brw_vec16_grf(payload.sample_offsets_reg, 4 * i),
+                                BRW_TYPE_UB);
+      ubld.MOV(subscript(sample_offs_xy, BRW_TYPE_UW, i), reg);
+   }
+
+   const fs_reg idx_b = bld.vgrf(BRW_TYPE_UD);
+   bld.MUL(idx_b, idx, brw_imm_ud(brw_type_size_bytes(BRW_TYPE_UD)));
+
+   const fs_reg off_xy = bld.vgrf(BRW_TYPE_UD);
+   bld.emit(SHADER_OPCODE_MOV_INDIRECT, off_xy, component(sample_offs_xy, 0),
+            idx_b, brw_imm_ud(16 * brw_type_size_bytes(BRW_TYPE_UD)));
+
+   const fs_reg offs = bld.vgrf(BRW_TYPE_F, 2);
+
+   for (unsigned i = 0; i < 2; i++) {
+      const fs_reg tmp = bld.vgrf(BRW_TYPE_F);
+      bld.MOV(tmp, subscript(off_xy, BRW_TYPE_UW, i));
+      bld.MUL(tmp, tmp, brw_imm_f(0.0625));
+      bld.ADD(offset(offs, bld, i), tmp, brw_imm_f(-0.5));
+   }
+
+   emit_pixel_interpolater_alu_at_offset(bld, dst, offs, interpolation);
+}
+
 /**
  * Computes 1 << x, given a D/UD register containing some value x.
  */
@@ -4182,34 +4221,42 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
          (enum glsl_interp_mode) nir_intrinsic_interp_mode(instr);
 
       fs_reg msg_data;
-      if (nir_src_is_const(instr->src[0])) {
-         msg_data = brw_imm_ud(nir_src_as_uint(instr->src[0]) << 4);
+      if (devinfo->ver >= 20) {
+         emit_pixel_interpolater_alu_at_sample(
+            bld, dest, retype(get_nir_src(ntb, instr->src[0]),
+                              BRW_TYPE_UD),
+            interpolation);
+
       } else {
-         const fs_reg sample_src = retype(get_nir_src(ntb, instr->src[0]),
-                                          BRW_TYPE_UD);
-         const fs_reg sample_id = bld.emit_uniformize(sample_src);
-         msg_data = component(bld.group(8, 0).vgrf(BRW_TYPE_UD), 0);
-         bld.exec_all().group(1, 0).SHL(msg_data, sample_id, brw_imm_ud(4u));
+         if (nir_src_is_const(instr->src[0])) {
+            msg_data = brw_imm_ud(nir_src_as_uint(instr->src[0]) << 4);
+         } else {
+            const fs_reg sample_src = retype(get_nir_src(ntb, instr->src[0]),
+                                             BRW_TYPE_UD);
+            const fs_reg sample_id = bld.emit_uniformize(sample_src);
+            msg_data = component(bld.group(8, 0).vgrf(BRW_TYPE_UD), 0);
+            bld.exec_all().group(1, 0).SHL(msg_data, sample_id, brw_imm_ud(4u));
+         }
+
+         fs_reg flag_reg;
+         struct brw_wm_prog_key *wm_prog_key = (struct brw_wm_prog_key *) s.key;
+         if (wm_prog_key->multisample_fbo == BRW_SOMETIMES) {
+            struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(s.prog_data);
+
+            check_dynamic_msaa_flag(bld.exec_all().group(8, 0),
+                                    wm_prog_data,
+                                    INTEL_MSAA_FLAG_MULTISAMPLE_FBO);
+            flag_reg = brw_flag_reg(0, 0);
+         }
+
+         emit_pixel_interpolater_send(bld,
+                                      FS_OPCODE_INTERPOLATE_AT_SAMPLE,
+                                      dest,
+                                      fs_reg(), /* src */
+                                      msg_data,
+                                      flag_reg,
+                                      interpolation);
       }
-
-      fs_reg flag_reg;
-      struct brw_wm_prog_key *wm_prog_key = (struct brw_wm_prog_key *) s.key;
-      if (wm_prog_key->multisample_fbo == BRW_SOMETIMES) {
-         struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(s.prog_data);
-
-         check_dynamic_msaa_flag(bld.exec_all().group(8, 0),
-                                 wm_prog_data,
-                                 INTEL_MSAA_FLAG_MULTISAMPLE_FBO);
-         flag_reg = brw_flag_reg(0, 0);
-      }
-
-      emit_pixel_interpolater_send(bld,
-                                   FS_OPCODE_INTERPOLATE_AT_SAMPLE,
-                                   dest,
-                                   fs_reg(), /* src */
-                                   msg_data,
-                                   flag_reg,
-                                   interpolation);
       break;
    }
 
@@ -4220,7 +4267,7 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
       if (devinfo->ver >= 20) {
          emit_pixel_interpolater_alu_at_offset(
             bld, dest,
-            retype(get_nir_src(instr->src[0]), BRW_TYPE_F),
+            retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_F),
             interpolation);
 
       } else if (nir_const_value *const_offset = nir_src_as_const_value(instr->src[0])) {
