@@ -58,6 +58,12 @@ anv_gem_munmap(struct anv_device *device, void *p, uint64_t size)
 uint32_t
 anv_gem_userptr(struct anv_device *device, void *mem, size_t size)
 {
+   /* TODO: looking for tests that uses this function to implement this */
+   if (device->info->kmd_type != INTEL_KMD_TYPE_I915) {
+      printf("TODO implement anv_gem_userptr for Xe\n");
+      return 0;
+   }
+
    struct drm_i915_gem_userptr userptr = {
       .user_ptr = (__u64)((unsigned long) mem),
       .user_size = size,
