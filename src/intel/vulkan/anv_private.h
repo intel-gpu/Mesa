@@ -940,6 +940,8 @@ uint32_t anv_scratch_pool_get_surf(struct anv_device *device,
                                    struct anv_scratch_pool *pool,
                                    unsigned per_thread_scratch);
 
+#define ANV_SCRATCH_SPACE_SHIFT(ver) ((ver) >= 20 ? 6 : 4)
+
 /** Implements a BO cache that ensures a 1-1 mapping of GEM BOs to anv_bos */
 struct anv_bo_cache {
    struct util_sparse_array bo_map;
