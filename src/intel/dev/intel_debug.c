@@ -107,6 +107,7 @@ static const struct debug_control debug_control[] = {
    { "bat-stats",   DEBUG_BATCH_STATS },
    { "reg-pressure", DEBUG_REG_PRESSURE },
    { "shader-print", DEBUG_SHADER_PRINT },
+   { "usebarriers", DEBUG_USEBARRIERS },
    { NULL,    0 }
 };
 
