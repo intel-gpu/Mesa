@@ -1970,6 +1970,337 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
    }
 }
 
+#if GFX_VER >= 20
+static struct GENX(RESOURCE_BARRIER_BODY)
+anv_resource_barrier_body_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
+                                           const VkAccessFlags2 srcFlags,
+                                           const VkAccessFlags2 dstFlags)
+{
+   struct anv_device *device = cmd_buffer->device;
+   struct GENX(RESOURCE_BARRIER_BODY) body = { 0 };
+   struct anv_bo *bo = 0;
+
+   u_foreach_bit64(b, srcFlags) {
+      switch ((VkAccessFlags2)BITFIELD64_BIT(b)) {
+      case VK_ACCESS_2_SHADER_WRITE_BIT:
+      case VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT:
+      case VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR:
+         /* We're transitioning a buffer that was previously used as write
+          * destination through the data port. To make its content available
+          * to future operations, flush the hdc pipeline.
+          */
+         body.L1DataportUAVFlush |= true;
+         break;
+      case VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT:
+         /* We're transitioning a buffer that was previously used as render
+          * target. To make its content available to future operations, flush
+          * the render target cache.
+          */
+         body.ColorCache |= true;
+         break;
+      case VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT:
+         /* We're transitioning a buffer that was previously used as depth
+          * buffer. To make its content available to future operations, flush
+          * the depth cache.
+          */
+         body.DepthCache |= true;
+         break;
+      case VK_ACCESS_2_TRANSFER_WRITE_BIT:
+         /* We're transitioning a buffer that was previously used as a
+          * transfer write destination. Generic write operations include color
+          * & depth operations as well as buffer operations like :
+          *     - vkCmdClearColorImage()
+          *     - vkCmdClearDepthStencilImage()
+          *     - vkCmdBlitImage()
+          *     - vkCmdCopy*(), vkCmdUpdate*(), vkCmdFill*()
+          *
+          * Most of these operations are implemented using Blorp which writes
+          * through the render target cache or the depth cache on the graphics
+          * queue. On the compute queue, the writes are done through the data
+          * port.
+          */
+         if (anv_cmd_buffer_is_compute_queue(cmd_buffer)) {
+            body.L1DataportUAVFlush |= true;
+         } else {
+            /* We can use the data port when trying to stay in compute mode on
+             * the RCS.
+             */
+            body.L1DataportUAVFlush |= true;
+            /* Most operations are done through RT/detph writes */
+            body.DepthCache |= true;
+            body.ColorCache |= true;
+         }
+         break;
+      case VK_ACCESS_2_MEMORY_WRITE_BIT:
+         /* We're transitioning a buffer for generic write operations. Flush
+          * all the caches.
+          */
+         body.DepthCache |= true;
+         body.ColorCache |= true;
+         body.L1DataportUAVFlush |= true;
+         body.AMFS |= true;
+         break;
+      case VK_ACCESS_2_HOST_WRITE_BIT:
+         /* We're transitioning a buffer for access by CPU. Invalidate
+          * all the caches. Since data and tile caches don't have invalidate,
+          * we are forced to flush those as well.
+          */
+         body.DepthCache |= true;
+         body.ColorCache |= true;
+         body.L1DataportUAVFlush |= true;
+         body.AMFS |= true;
+         body.L1DataportCacheInvalidate |= true;
+         body.TextureRO |= true;
+         body.VFRO |= true;
+         body.ConstantCache |= true;
+         body.StateRO |= true;
+         break;
+      case VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT:
+      case VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT:
+         /* We're transitioning a buffer written either from VS stage or from
+          * the command streamer (see CmdEndTransformFeedbackEXT), we just
+          * need to stall the CS.
+          *
+          * Streamout writes apparently bypassing L3, in order to make them
+          * visible to the destination, we need to invalidate the other
+          * caches.
+          */
+         body.L1DataportCacheInvalidate |= true;
+         body.TextureRO |= true;
+         body.VFRO |= true;
+         body.ConstantCache |= true;
+         body.StateRO |= true;
+         break;
+      default:
+         break; /* Nothing to do */
+      }
+   }
+
+   u_foreach_bit64(b, dstFlags) {
+      switch ((VkAccessFlags2)BITFIELD64_BIT(b)) {
+      case VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT:
+         /* Indirect draw commands also set gl_BaseVertex & gl_BaseIndex
+          * through a vertex buffer, so invalidate that cache.
+          */
+         body.VFRO |= true;
+         /* For CmdDipatchIndirect, we also load gl_NumWorkGroups through a
+          * UBO from the buffer, so we need to invalidate constant cache.
+          */
+         body.ConstantCache |= true;
+         body.L1DataportUAVFlush |= true;
+         break;
+      case VK_ACCESS_2_INDEX_READ_BIT:
+      case VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT:
+         /* We transitioning a buffer to be used for as input for vkCmdDraw*
+          * commands, so we invalidate the VF cache to make sure there is no
+          * stale data when we start rendering.
+          */
+         body.VFRO |= true;
+         break;
+      case VK_ACCESS_2_UNIFORM_READ_BIT:
+      case VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR:
+         /* We transitioning a buffer to be used as uniform data. Because
+          * uniform is accessed through the data port & sampler, we need to
+          * invalidate the texture cache (sampler) & constant cache (data
+          * port) to avoid stale data.
+          */
+         body.ConstantCache |= true;
+         if (device->physical->compiler->indirect_ubos_use_sampler) {
+            body.TextureRO |= true;
+         } else {
+            body.L1DataportUAVFlush |= true;
+         }
+         break;
+      case VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT:
+      case VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT:
+      case VK_ACCESS_2_TRANSFER_READ_BIT:
+      case VK_ACCESS_2_SHADER_SAMPLED_READ_BIT:
+         /* Transitioning a buffer to be read through the sampler, so
+          * invalidate the texture cache, we don't want any stale data.
+          */
+         body.TextureRO |= true;
+         break;
+      case VK_ACCESS_2_SHADER_READ_BIT:
+         /* Same as VK_ACCESS_2_UNIFORM_READ_BIT and
+          * VK_ACCESS_2_SHADER_SAMPLED_READ_BIT cases above
+          */
+         body.ConstantCache |= true;
+         body.TextureRO |= true;
+         if (!device->physical->compiler->indirect_ubos_use_sampler) {
+            body.L1DataportUAVFlush |= true;
+         }
+         break;
+      case VK_ACCESS_2_MEMORY_READ_BIT:
+         /* Transitioning a buffer for generic read, invalidate all the
+          * caches.
+          */
+         body.L1DataportCacheInvalidate |= true;
+         body.TextureRO |= true;
+         body.VFRO |= true;
+         body.ConstantCache |= true;
+         body.StateRO |= true;
+         break;
+      case VK_ACCESS_2_MEMORY_WRITE_BIT:
+         /* Generic write, make sure all previously written things land in
+          * memory.
+          */
+         body.DepthCache |= true;
+         body.ColorCache |= true;
+         body.L1DataportUAVFlush |= true;
+         body.AMFS |= true;
+         break;
+      case VK_ACCESS_2_CONDITIONAL_RENDERING_READ_BIT_EXT:
+      case VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_READ_BIT_EXT:
+         /* Transitioning a buffer for conditional rendering or transform
+          * feedback. We'll load the content of this buffer into HW registers
+          * using the command streamer, so we need to stall the command
+          * streamer , so we need to stall the command streamer to make sure
+          * any in-flight flush operations have completed.
+          */
+         body.L1DataportUAVFlush |= true;
+         break;
+      case VK_ACCESS_2_HOST_READ_BIT:
+         /* We're transitioning a buffer that was written by CPU.  Flush
+          * all the caches.
+          */
+         body.DepthCache |= true;
+         body.ColorCache |= true;
+         body.L1DataportUAVFlush |= true;
+         body.AMFS |= true;
+         break;
+      case VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT:
+         /* We're transitioning a buffer to be written by the streamout fixed
+          * function. This one is apparently not L3 coherent, so we need a
+          * tile cache flush to make sure any previous write is not going to
+          * create WaW hazards.
+          */
+         body.L1DataportUAVFlush |= true;
+         break;
+      case VK_ACCESS_2_SHADER_STORAGE_READ_BIT:
+         /* VK_ACCESS_2_SHADER_STORAGE_READ_BIT specifies read access to a
+          * storage buffer, physical storage buffer, storage texel buffer, or
+          * storage image in any shader pipeline stage.
+          *
+          * Any storage buffers or images written to must be invalidated and
+          * flushed before the shader can access them.
+          *
+          * Both HDC & Untyped flushes also do invalidation. This is why we
+          * use this here on Gfx12+.
+          *
+          * Gfx11 and prior don't have HDC. Only Data cache flush is available
+          * and it only operates on the written cache lines.
+          */
+         body.L1DataportUAVFlush |= true;
+         break;
+      case VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT:
+         body.StateRO |= true;
+         break;
+      default:
+         break; /* Nothing to do */
+      }
+   }
+
+   VkResult result = anv_device_alloc_bo(device,
+                                         "resource barrier",
+                                         sizeof(uint64_t),
+                                         0, /* alloc_flags */
+                                         0, /* explicit_address */
+                                         &bo);
+   if (result != VK_SUCCESS)
+      vk_errorf(device, VK_ERROR_OUT_OF_DEVICE_MEMORY, "Out of heap memory");
+
+   body.BarrierIDAddress = (struct anv_address){ .bo = bo };
+
+   return body;
+}
+
+#endif /* GFX_VER >= 20 */
+
+static void
+cmd_buffer_alloc_gfx_push_constants(struct anv_cmd_buffer *cmd_buffer)
+{
+   struct anv_graphics_pipeline *pipeline =
+      anv_pipeline_to_graphics(cmd_buffer->state.gfx.base.pipeline);
+   VkShaderStageFlags stages = pipeline->base.base.active_stages;
+
+   /* In order to avoid thrash, we assume that vertex and fragment stages
+    * always exist.  In the rare case where one is missing *and* the other
+    * uses push concstants, this may be suboptimal.  However, avoiding stalls
+    * seems more important.
+    */
+   stages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+   if (anv_pipeline_is_primitive(pipeline))
+      stages |= VK_SHADER_STAGE_VERTEX_BIT;
+
+   if (stages == cmd_buffer->state.gfx.push_constant_stages)
+      return;
+
+   unsigned push_constant_kb;
+
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+   if (anv_pipeline_is_mesh(pipeline))
+      push_constant_kb = devinfo->mesh_max_constant_urb_size_kb;
+   else
+      push_constant_kb = devinfo->max_constant_urb_size_kb;
+
+   const unsigned num_stages =
+      util_bitcount(stages & VK_SHADER_STAGE_ALL_GRAPHICS);
+   unsigned size_per_stage = push_constant_kb / num_stages;
+
+   /* Broadwell+ and Haswell gt3 require that the push constant sizes be in
+    * units of 2KB.  Incidentally, these are the same platforms that have
+    * 32KB worth of push constant space.
+    */
+   if (push_constant_kb == 32)
+      size_per_stage &= ~1u;
+
+   uint32_t kb_used = 0;
+   for (int i = MESA_SHADER_VERTEX; i < MESA_SHADER_FRAGMENT; i++) {
+      const unsigned push_size = (stages & (1 << i)) ? size_per_stage : 0;
+      anv_batch_emit(&cmd_buffer->batch,
+                     GENX(3DSTATE_PUSH_CONSTANT_ALLOC_VS), alloc) {
+         alloc._3DCommandSubOpcode  = 18 + i;
+         alloc.ConstantBufferOffset = (push_size > 0) ? kb_used : 0;
+         alloc.ConstantBufferSize   = push_size;
+      }
+      kb_used += push_size;
+   }
+
+   anv_batch_emit(&cmd_buffer->batch,
+                  GENX(3DSTATE_PUSH_CONSTANT_ALLOC_PS), alloc) {
+      alloc.ConstantBufferOffset = kb_used;
+      alloc.ConstantBufferSize = push_constant_kb - kb_used;
+   }
+
+#if GFX_VERx10 == 125
+   /* DG2: Wa_22011440098
+    * MTL: Wa_18022330953
+    *
+    * In 3D mode, after programming push constant alloc command immediately
+    * program push constant command(ZERO length) without any commit between
+    * them.
+    */
+   anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_CONSTANT_ALL), c) {
+      /* Update empty push constants for all stages (bitmask = 11111b) */
+      c.ShaderUpdateEnable = 0x1f;
+      c.MOCS = anv_mocs(cmd_buffer->device, NULL, 0);
+   }
+#endif
+
+   cmd_buffer->state.gfx.push_constant_stages = stages;
+
+   /* From the BDW PRM for 3DSTATE_PUSH_CONSTANT_ALLOC_VS:
+    *
+    *    "The 3DSTATE_CONSTANT_VS must be reprogrammed prior to
+    *    the next 3DPRIMITIVE command after programming the
+    *    3DSTATE_PUSH_CONSTANT_ALLOC_VS"
+    *
+    * Since 3DSTATE_PUSH_CONSTANT_ALLOC_VS is programmed as part of
+    * pipeline setup, we need to dirty push constants.
+    */
+   cmd_buffer->state.push_constants_dirty |= stages;
+}
+
 static inline struct anv_state
 emit_dynamic_buffer_binding_table_entry(struct anv_cmd_buffer *cmd_buffer,
                                         struct anv_cmd_pipeline_state *pipe_state,
