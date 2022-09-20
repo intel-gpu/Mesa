@@ -2117,6 +2117,126 @@ anv_resource_barrier_body_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
    return body;
 }
 
+static inline enum GENX(RESOURCE_BARRIER_STAGE)
+anv_resource_barrier_signal_stage(const struct anv_cmd_buffer *cmd_buffer,
+                                  const VkPipelineStageFlags2 srcStageMask)
+{
+   /* Early return for when we have no stage mask,
+    * signal on the very first stage.
+    */
+   enum GENX(RESOURCE_BARRIER_STAGE) signal_stage = RESOURCE_BARRIER_STAGE_NONE;
+
+   u_foreach_bit64(bit, srcStageMask) {
+      switch((VkPipelineStageFlags2)BITFIELD64_BIT(bit)) {
+      case VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT:
+      case VK_PIPELINE_STAGE_2_HOST_BIT:
+      case VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT:
+         signal_stage |= RESOURCE_BARRIER_STAGE_TOP;
+         break;
+      case VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR:
+      case VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR:
+      case VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR:
+         signal_stage |= RESOURCE_BARRIER_STAGE_GPGPU;
+         break;
+      case VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT:
+      case VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT:
+      case VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT:
+      case VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT:
+         signal_stage |= RESOURCE_BARRIER_STAGE_GEOM;
+         break;
+      case VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT:
+         signal_stage |= RESOURCE_BARRIER_STAGE_DEPTH;
+         break;
+      case VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR:
+         signal_stage |= RESOURCE_BARRIER_STAGE_PIXEL;
+         break;
+      case VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT:
+      case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT:
+      case VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT:
+         signal_stage |= RESOURCE_BARRIER_STAGE_COLOR;
+         break;
+      case VK_PIPELINE_STAGE_2_BLIT_BIT:
+      case VK_PIPELINE_STAGE_2_COPY_BIT:
+      case VK_PIPELINE_STAGE_2_CLEAR_BIT:
+      case VK_PIPELINE_STAGE_2_RESOLVE_BIT:
+      case VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT:
+      case VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT:
+      case VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT:
+         signal_stage |= RESOURCE_BARRIER_STAGE_COLOR |
+                         RESOURCE_BARRIER_STAGE_GPGPU;
+         break;
+      }
+   }
+
+   return signal_stage;
+}
+
+static inline enum GENX(RESOURCE_BARRIER_STAGE)
+anv_resource_barrier_wait_stage(const struct anv_cmd_buffer *cmd_buffer,
+                                const VkPipelineStageFlags2 dstStageMask)
+{
+   enum GENX(RESOURCE_BARRIER_STAGE) wait_stage = RESOURCE_BARRIER_STAGE_NONE;
+
+   u_foreach_bit64(bit, dstStageMask) {
+      switch((VkPipelineStageFlags2)BITFIELD64_BIT(bit)) {
+      case VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT:
+      case VK_PIPELINE_STAGE_2_HOST_BIT:
+      case VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT:
+      case VK_PIPELINE_STAGE_2_COPY_BIT:
+      case VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT:
+      case VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT:
+      case VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR:
+      case VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR:
+      case VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR:
+      case VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_INDEX_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT:
+      case VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT:
+      case VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT:
+      case VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT:
+      case VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT:
+         wait_stage |= RESOURCE_BARRIER_STAGE_TOP;
+         break;
+      case VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT:
+      case VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR:
+         wait_stage |= RESOURCE_BARRIER_STAGE_RASTER;
+         break;
+      case VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT:
+      case VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT:
+      case VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT:
+      case VK_PIPELINE_STAGE_2_RESOLVE_BIT:
+      case VK_PIPELINE_STAGE_2_BLIT_BIT:
+         wait_stage |= RESOURCE_BARRIER_STAGE_PIXEL;
+         break;
+      case VK_PIPELINE_STAGE_2_CLEAR_BIT:
+      case VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT:
+         wait_stage |= RESOURCE_BARRIER_STAGE_GPGPU |
+                       RESOURCE_BARRIER_STAGE_PIXEL;
+         break;
+      default:
+         break;
+      }
+   }
+
+   return wait_stage;
+}
+
 #endif /* GFX_VER >= 20 */
 
 static inline struct anv_state
