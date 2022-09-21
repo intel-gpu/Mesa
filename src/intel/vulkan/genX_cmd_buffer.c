@@ -6113,6 +6113,8 @@ void genX(CmdSetEvent2)(
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    ANV_FROM_HANDLE(anv_event, event, _event);
 
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+
    if (anv_cmd_buffer_is_video_queue(cmd_buffer)) {
       anv_batch_emit(&cmd_buffer->batch, GENX(MI_FLUSH_DW), flush) {
          flush.PostSyncOperation = WriteImmediateData;
@@ -6126,15 +6128,22 @@ void genX(CmdSetEvent2)(
 
    VkPipelineStageFlags2 src_stages = 0;
 
-   for (uint32_t i = 0; i < pDependencyInfo->memoryBarrierCount; i++)
-      src_stages |= pDependencyInfo->pMemoryBarriers[i].srcStageMask;
-   for (uint32_t i = 0; i < pDependencyInfo->bufferMemoryBarrierCount; i++)
-      src_stages |= pDependencyInfo->pBufferMemoryBarriers[i].srcStageMask;
-   for (uint32_t i = 0; i < pDependencyInfo->imageMemoryBarrierCount; i++)
-      src_stages |= pDependencyInfo->pImageMemoryBarriers[i].srcStageMask;
+   if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+#if GFX_VER >= 20
+      anv_resource_barriers_from_info(cmd_buffer, pDependencyInfo);
+#endif
+   } else {
+      for (uint32_t i = 0; i < pDependencyInfo->memoryBarrierCount; i++)
+         src_stages |= pDependencyInfo->pMemoryBarriers[i].srcStageMask;
+      for (uint32_t i = 0; i < pDependencyInfo->bufferMemoryBarrierCount; i++)
+         src_stages |= pDependencyInfo->pBufferMemoryBarriers[i].srcStageMask;
+      for (uint32_t i = 0; i < pDependencyInfo->imageMemoryBarrierCount; i++)
+         src_stages |= pDependencyInfo->pImageMemoryBarriers[i].srcStageMask;
 
-   cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
-   genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+      cmd_buffer->state.pending_pipe_bits |= ANV_PIPE_POST_SYNC_BIT;
+      genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+   }
+
 
    enum anv_pipe_bits pc_bits = 0;
    if (src_stages & ANV_PIPELINE_STAGE_PIPELINED_BITS) {
@@ -6143,7 +6152,7 @@ void genX(CmdSetEvent2)(
   }
 
    genx_batch_emit_pipe_control_write
-      (&cmd_buffer->batch, cmd_buffer->device->info,
+      (&cmd_buffer->batch, devinfo,
        cmd_buffer->state.current_pipeline, WriteImmediateData,
        anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
                                     event->state),
