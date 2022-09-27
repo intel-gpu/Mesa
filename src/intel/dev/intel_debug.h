@@ -100,6 +100,7 @@ extern uint64_t intel_debug;
 #define DEBUG_SHADER_PRINT        (1ull << 52)
 #define DEBUG_CL_QUIET            (1ull << 53)
 #define DEBUG_USEBARRIERS         (1ull << 54)
+#define DEBUG_RESOURCE_BARRIERS   (1ull << 55)
 
 #define DEBUG_ANY                 (~0ull)
 

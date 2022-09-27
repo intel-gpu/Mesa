@@ -1915,6 +1915,96 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
 }
 
 #if GFX_VER >= 20
+const static inline void
+anv_dump_rsc_stage(const enum GENX(RESOURCE_BARRIER_STAGE) stage)
+{
+   u_foreach_bit(bit, stage) {
+      switch(1 << bit) {
+         case RESOURCE_BARRIER_STAGE_NONE:
+            fputs("None ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_TOP:
+            fputs("Top ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_COLOR:
+            fputs("Color ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_GPGPU:
+            fputs("GPGPU ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_GEOM:
+            fputs("Geometry ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_RASTER:
+            fputs("Raster ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_DEPTH:
+            fputs("Depth ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_PIXEL:
+            fputs("Pixel ", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_COLORANDCOMPUTE:
+            fputs("ColorAndCompute", stderr);
+            break;
+         case RESOURCE_BARRIER_STAGE_GEOMETRYANDCOMPUTE:
+            fputs("GeometryAndCompute", stderr);
+            break;
+         default:
+            unreachable("Unknown barrier stage");
+      }
+   }
+   fputs("\n", stderr);
+}
+
+const static inline void
+anv_dump_rsc_barrier_body(const VkPipelineStageFlags2 srcStageMask,
+                          const VkAccessFlags2 srcAccessMask,
+                          const VkPipelineStageFlags2 dstStageMask,
+                          const VkAccessFlags2 dstAccessMask,
+                          const struct GENX(RESOURCE_BARRIER_BODY) body)
+{
+   if (!INTEL_DEBUG(DEBUG_RESOURCE_BARRIERS))
+      return;
+
+   if (srcStageMask) {
+      fputs("Signal Barrier: ", stderr);
+      anv_dump_rsc_stage(body.SignalStage);
+   }
+
+   if (dstStageMask) {
+      fputs("Wait Barrier: ", stderr);
+      anv_dump_rsc_stage(body.WaitStage);
+   }
+
+   fputs("Cache flags:\n", stderr);
+   if (body.L1DataportCacheInvalidate)
+      fputs("\t+L1 Data Cache Invalidate\n", stderr);
+
+   if (body.DepthCache)
+      fputs("\t+Depth Cache\n", stderr);
+
+   if (body.ColorCache)
+      fputs("\t+Color Cache\n", stderr);
+
+   if (body.L1DataportUAVFlush)
+      fputs("\t+L1 Dataport UAV Flush\n", stderr);
+
+   if (body.TextureRO)
+      fputs("\t+Texture RO\n", stderr);
+
+   if (body.VFRO)
+      fputs("\t+VF RO\n", stderr);
+
+   if (body.AMFS)
+      fputs("\t+AMFS\n", stderr);
+
+   if (body.ConstantCache)
+      fputs("\t+Constant Cache\n", stderr);
+
+   fputs("\n", stderr);
+}
+
 static struct GENX(RESOURCE_BARRIER_BODY)
 anv_resource_barrier_body_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
                                            const VkAccessFlags2 srcFlags,

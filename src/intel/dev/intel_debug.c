@@ -109,6 +109,7 @@ static const struct debug_control debug_control[] = {
    { "shader-print", DEBUG_SHADER_PRINT },
    { "cl-quiet",     DEBUG_CL_QUIET },
    { "usebarriers", DEBUG_USEBARRIERS },
+   { "rsc-barriers",DEBUG_RESOURCE_BARRIERS },
    { NULL,    0 }
 };
 
