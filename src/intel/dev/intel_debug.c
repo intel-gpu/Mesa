@@ -108,6 +108,7 @@ static const struct debug_control debug_control[] = {
    { "reg-pressure", DEBUG_REG_PRESSURE },
    { "shader-print", DEBUG_SHADER_PRINT },
    { "usebarriers", DEBUG_USEBARRIERS },
+   { "rsc-barriers",DEBUG_RESOURCE_BARRIERS },
    { NULL,    0 }
 };
 
