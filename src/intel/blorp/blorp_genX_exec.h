@@ -141,6 +141,7 @@ _blorp_combine_address(struct blorp_batch *batch, void *location,
 #define __gen_combine_address _blorp_combine_address
 
 #include "genxml/genX_pack.h"
+#include "common/intel_genX.h"
 
 #define _blorp_cmd_length(cmd) cmd ## _length
 #define _blorp_cmd_length_bias(cmd) cmd ## _length_bias
@@ -2216,6 +2217,7 @@ blorp_exec_compute(struct blorp_batch *batch, const struct blorp_params *params)
          .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
          .SharedLocalMemorySize =
             encode_slm_size(GFX_VER, prog_data->total_shared),
+         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
          .NumberOfBarriers = cs_prog_data->uses_barrier,
       };
    }

@@ -29,6 +29,7 @@
 
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
+#include "common/intel_genX.h"
 #include "nir/nir_xfb_info.h"
 #include "vk_util.h"
 #include "vk_format.h"
@@ -1715,6 +1716,8 @@ emit_task_state(struct anv_graphics_pipeline *pipeline)
       task.NumberofBarriers                  = task_prog_data->base.uses_barrier;
       task.SharedLocalMemorySize             =
          encode_slm_size(GFX_VER, task_prog_data->base.base.total_shared);
+      task.PreferredSLMAllocationSize        =
+         preferred_slm_allocation_size(devinfo);
 
       /*
        * 3DSTATE_TASK_SHADER_DATA.InlineData[0:1] will be used for an address
@@ -1793,6 +1796,8 @@ emit_mesh_state(struct anv_graphics_pipeline *pipeline)
       mesh.NumberofBarriers                  = mesh_prog_data->base.uses_barrier;
       mesh.SharedLocalMemorySize             =
          encode_slm_size(GFX_VER, mesh_prog_data->base.base.total_shared);
+      mesh.PreferredSLMAllocationSize        =
+         preferred_slm_allocation_size(devinfo);
 
       /*
        * 3DSTATE_MESH_SHADER_DATA.InlineData[0:1] will be used for an address

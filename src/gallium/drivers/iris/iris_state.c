@@ -111,6 +111,7 @@
 #include "iris_genx_macros.h"
 #include "intel/common/intel_guardband.h"
 #include "intel/common/intel_pixel_hash.h"
+#include "intel/common/intel_genX.h"
 
 /**
  * Statically assert that PIPE_* enums match the hardware packets.
@@ -7452,6 +7453,7 @@ iris_upload_compute_walker(struct iris_context *ice,
          .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
          .SharedLocalMemorySize =
             encode_slm_size(GFX_VER, prog_data->total_shared),
+         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
          .NumberOfBarriers = cs_prog_data->uses_barrier,
          .SamplerStatePointer = shs->sampler_table.offset,
          .SamplerCount = encode_sampler_count(shader),

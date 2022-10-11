@@ -38,6 +38,7 @@
 #include "genxml/gen_rt_pack.h"
 #include "common/intel_guardband.h"
 #include "compiler/brw_prim.h"
+#include "common/intel_genX.h"
 
 #include "nir/nir_xfb_info.h"
 
@@ -5267,6 +5268,7 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
          .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
          .SharedLocalMemorySize = encode_slm_size(GFX_VER,
                                                   prog_data->base.total_shared),
+         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
          .NumberOfBarriers = prog_data->uses_barrier,
       };
    }
