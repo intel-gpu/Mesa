@@ -36,6 +36,16 @@
 extern "C" {
 #endif
 
+#if GFX_VERx10 >= 125
+
+UNUSED static int
+preferred_slm_allocation_size(const struct intel_device_info *devinfo)
+{
+   return 0;
+}
+
+#endif
+
 #ifdef __cplusplus
 }
 #endif
