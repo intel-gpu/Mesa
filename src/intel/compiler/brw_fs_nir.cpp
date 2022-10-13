@@ -6163,6 +6163,8 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
       srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(ntb, instr->src[1]);
       srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] =
          brw_imm_ud(nir_image_intrinsic_coord_components(instr));
+      /** TGM messages *must* set base offset to 0 */
+      srcs[SURFACE_LOGICAL_SRC_BASE_OFFSET] = brw_imm_ud(0);
 
       /* Emit an image load, store or atomic op. */
       if (instr->intrinsic == nir_intrinsic_image_load ||
