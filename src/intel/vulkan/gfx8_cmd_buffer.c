@@ -587,6 +587,19 @@ genX(cmd_buffer_flush_dynamic_state)(struct anv_cmd_buffer *cmd_buffer)
          ds.BackfaceStencilTestFunction = genX(vk_to_intel_compare_op)[opt_ds.stencil.back.op.compare];
       }
 
+#if GFX_VERx10 == 125
+      /* Wa_14015842950 */
+      uint8_t ds_write_state =
+         anv_ds_write_state(opt_ds.depth.write_enable,
+                            opt_ds.stencil.write_enable);
+      if (cmd_buffer->state.ds_write_state != ds_write_state) {
+         anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
+            pc.PSSStallSyncEnable = true;
+         }
+         cmd_buffer->state.ds_write_state = ds_write_state;
+      }
+#endif
+
       const bool pma = want_stencil_pma_fix(cmd_buffer, &opt_ds);
       genX(cmd_buffer_enable_pma_fix)(cmd_buffer, pma);
    }
