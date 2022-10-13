@@ -2605,6 +2605,12 @@ struct anv_cmd_state {
     * A buffer used for spill/fill of ray queries.
     */
    struct anv_bo *                              ray_query_shadow_bo;
+
+   /**
+    * Bitmask of DEPTH and STENCIL attachment write state
+    * for Wa_14015842950.
+    */
+   uint8_t                                      ds_write_state;
 };
 
 #define ANV_MIN_CMD_BUFFER_BATCH_SIZE 8192
@@ -3872,6 +3878,12 @@ void anv_image_get_memory_requirements(struct anv_device *device,
 enum isl_format
 anv_isl_format_for_descriptor_type(const struct anv_device *device,
                                    VkDescriptorType type);
+
+static uint8_t
+anv_ds_write_state(bool depth_write_enable, bool stencil_write_enable)
+{
+   return (depth_write_enable ? 0x1 : 0) | (stencil_write_enable ? 0x2 : 0);
+}
 
 static inline uint32_t
 anv_rasterization_aa_mode(VkPolygonMode raster_mode,
