@@ -288,6 +288,16 @@ blorp_exec_on_render(struct blorp_batch *batch,
                              "before blorp BTI change");
 #endif
 
+#if GFX_VERx10 == 125
+   /* Check if blorp ds state matches ours. */
+   uint8_t blorp_ds_state =
+      anv_ds_write_state(params->depth.enabled, params->stencil.enabled);
+   if (cmd_buffer->state.ds_write_state != blorp_ds_state) {
+      batch->flags |= BLORP_BATCH_NEED_PSS_STALL_SYNC;
+      cmd_buffer->state.ds_write_state = blorp_ds_state;
+   }
+#endif
+
    if (params->depth.enabled &&
        !(batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))
       genX(cmd_buffer_emit_gfx12_depth_wa)(cmd_buffer, &params->depth.surf);
