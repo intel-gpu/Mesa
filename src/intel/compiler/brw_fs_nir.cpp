@@ -4505,6 +4505,14 @@ addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
 {
    switch(instr->intrinsic) {
    case nir_intrinsic_store_shared:
+   case nir_intrinsic_bindless_image_atomic:
+   case nir_intrinsic_bindless_image_atomic_swap:
+   case nir_intrinsic_bindless_image_load:
+   case nir_intrinsic_bindless_image_store:
+   case nir_intrinsic_image_atomic:
+   case nir_intrinsic_image_atomic_swap:
+   case nir_intrinsic_image_load:
+   case nir_intrinsic_image_store:
    case nir_intrinsic_ssbo_atomic:
    case nir_intrinsic_ssbo_atomic_swap:
       return instr->src[1];
@@ -6202,7 +6210,8 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
          break;
       }
 
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(ntb, instr->src[1]);
+      srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
+         base_address_for_instr(ntb, bld, instr);
       srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] =
          brw_imm_ud(nir_image_intrinsic_coord_components(instr));
       /** TGM messages *must* set base offset to 0 */
