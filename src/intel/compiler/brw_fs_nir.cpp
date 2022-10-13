@@ -4500,6 +4500,46 @@ brw_workgroup_size(fs_visitor &s)
    return cs->local_size[0] * cs->local_size[1] * cs->local_size[2];
 }
 
+static const nir_src
+addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
+{
+   switch(instr->intrinsic) {
+   case nir_intrinsic_store_shared:
+      return instr->src[1];
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
+      return instr->src[0];
+   default:
+      unreachable("Unhandled intrinsic");
+   }
+}
+
+static const brw_reg
+base_address_for_instr(nir_to_brw_state &ntb, const fs_builder &bld,
+                       const nir_intrinsic_instr *instr)
+{
+   fs_visitor *s = (fs_visitor *)bld.shader;
+   const intel_device_info *devinfo = s->devinfo;
+   const nir_src src = addr_reg_src_for_instr(instr);
+   const brw_reg addr = get_nir_src(ntb, src);
+   const int base = nir_intrinsic_has_base(instr) ?
+      nir_intrinsic_base(instr) :
+      0;
+
+   if (!base)
+      return addr;
+   else if (nir_src_is_const(src))
+      return brw_imm_ud(base + nir_src_as_uint(src));
+   else if (devinfo->ver >= 20)
+      return brw_imm_d(base);
+   else {
+      brw_reg addr_off = bld.vgrf(BRW_TYPE_UD);
+      bld.ADD(addr_off, addr, brw_imm_d(base));
+      return addr_off;
+   }
+}
+
 static void
 fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
                          nir_intrinsic_instr *instr)
@@ -4587,10 +4627,10 @@ fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
       brw_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
       srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX7_BTI_SLM);
 
-      brw_reg addr = retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_UD);
-      unsigned base = nir_intrinsic_base(instr);
       srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-         base ? bld.ADD(addr, brw_imm_ud(base)) : addr;
+         base_address_for_instr(ntb, bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+         brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
 
       srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
       srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(0);
@@ -4626,10 +4666,10 @@ fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
       brw_reg srcs[SURFACE_LOGICAL_NUM_SRCS];
       srcs[SURFACE_LOGICAL_SRC_SURFACE] = brw_imm_ud(GFX7_BTI_SLM);
 
-      brw_reg addr = retype(get_nir_src(ntb, instr->src[1]), BRW_TYPE_UD);
-      unsigned base = nir_intrinsic_base(instr);
       srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-         base ? bld.ADD(addr, brw_imm_ud(base)) : addr;
+         base_address_for_instr(ntb, bld, instr);
+      srcs[SURFACE_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+         brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
 
       srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
       /* No point in masking with sample mask, here we're handling compute
