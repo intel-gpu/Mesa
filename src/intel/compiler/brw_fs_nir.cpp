@@ -4505,6 +4505,8 @@ addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
 {
    switch(instr->intrinsic) {
    case nir_intrinsic_store_shared:
+   case nir_intrinsic_ssbo_atomic:
+   case nir_intrinsic_ssbo_atomic_swap:
       return instr->src[1];
    case nir_intrinsic_load_shared:
    case nir_intrinsic_shared_atomic:
@@ -8236,25 +8238,12 @@ fs_nir_emit_surface_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
    srcs[bindless ?
         SURFACE_LOGICAL_SRC_SURFACE_HANDLE :
         SURFACE_LOGICAL_SRC_SURFACE] = surface;
+   srcs[SURFACE_LOGICAL_SRC_ADDRESS] = base_address_for_instr(ntb, bld, instr);
+   srcs[SURFACE_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+      brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
    srcs[SURFACE_LOGICAL_SRC_IMM_DIMS] = brw_imm_ud(1);
    srcs[SURFACE_LOGICAL_SRC_IMM_ARG] = brw_imm_ud(op);
    srcs[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK] = brw_imm_ud(1);
-
-   if (shared) {
-      /* SLM - Get the offset */
-      if (nir_src_is_const(instr->src[0])) {
-         srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-            brw_imm_ud(nir_intrinsic_base(instr) +
-                       nir_src_as_uint(instr->src[0]));
-      } else {
-         srcs[SURFACE_LOGICAL_SRC_ADDRESS] =
-            bld.ADD(retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_UD),
-                    brw_imm_ud(nir_intrinsic_base(instr)));
-      }
-   } else {
-      /* SSBOs */
-      srcs[SURFACE_LOGICAL_SRC_ADDRESS] = get_nir_src(ntb, instr->src[1]);
-   }
 
    brw_reg data;
    if (num_data >= 1)
