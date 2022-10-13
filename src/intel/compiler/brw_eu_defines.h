@@ -643,6 +643,8 @@ enum surface_logical_srcs {
     * sample mask, e.g. lowered stores to scratch.
     */
    SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK,
+   /** Base offset for surface address*/
+   SURFACE_LOGICAL_SRC_BASE_OFFSET,
 
    SURFACE_LOGICAL_NUM_SRCS
 };

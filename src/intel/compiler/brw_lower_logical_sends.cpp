@@ -1371,12 +1371,15 @@ setup_surface_descriptors(const fs_builder &bld, fs_inst *inst, uint32_t desc,
 
 static void
 setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
-                              uint32_t desc, const brw_reg &surface)
+                              uint32_t desc, const brw_reg &surface,
+                              const brw_reg &base_offset)
 {
    const ASSERTED intel_device_info *devinfo = bld.shader->devinfo;
    const brw_compiler *compiler = bld.shader->compiler;
+   const fs_builder ubld1 = bld.exec_all().group(1, 0);
 
    inst->src[0] = brw_imm_ud(0); /* desc */
+   inst->src[1] = brw_imm_ud(0);
 
    enum lsc_addr_surface_type surf_type = lsc_msg_desc_addr_type(devinfo, desc);
    switch (surf_type) {
@@ -1389,22 +1392,50 @@ setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
        * we can use the surface handle directly as the extended descriptor.
        */
       inst->src[1] = retype(surface, BRW_TYPE_UD);
+      if (base_offset.file == IMM) {
+         /* We can only encode 16 bits in the extended descriptor */
+         assert((ffs(base_offset.ud) - 1) <= 16);
+         inst->ex_desc = SET_BITS(GET_BITS(base_offset.ud, 16, 4), 31, 19) |
+                         SET_BITS(GET_BITS(base_offset.ud, 3, 0), 15, 12);
+      } else if (base_offset.file != BAD_FILE)
+         unreachable("BSS base offset incomplete!!!");
       break;
 
    case LSC_ADDR_SURFTYPE_BTI:
       assert(surface.file != BAD_FILE);
       if (surface.file == IMM) {
-         inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
-      } else {
-         const fs_builder ubld = bld.exec_all().group(1, 0);
-         brw_reg tmp = ubld.vgrf(BRW_TYPE_UD);
-         ubld.SHL(tmp, surface, brw_imm_ud(24));
-         inst->src[1] = component(tmp, 0);
+         unsigned offset = base_offset.file == BAD_FILE ? 0 : base_offset.ud;
+         /* We can only encode 11 bits in the extended descriptor */
+         assert((ffs(base_offset.ud) - 1) <= 11);
+         inst->src[1] =
+            brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud, offset));
+      } else if (surface.file != BAD_FILE) {
+         brw_reg surface_reg = ubld1.vgrf(BRW_TYPE_UD);
+         ubld1.SHL(surface_reg, surface, brw_imm_ud(24));
+
+         if (base_offset.file == IMM)
+            ubld1.OR(surface_reg, surface_reg, base_offset);
+         else if (base_offset.file != BAD_FILE) {
+            brw_reg offset_reg = ubld1.vgrf(BRW_TYPE_UD);
+            ubld1.SHL(offset_reg, base_offset, brw_imm_ud(12));
+            ubld1.OR(surface_reg, surface_reg, offset_reg);
+         }
+
+         inst->src[1] = component(surface_reg, 0);
       }
       break;
 
    case LSC_ADDR_SURFTYPE_FLAT:
       inst->src[1] = brw_imm_ud(0);
+      if (base_offset.file == IMM) {
+         /* We can only encode 19 bits in the extended descriptor */
+         assert((ffs(base_offset.ud) - 1) <= 19);
+         inst->src[1] = brw_imm_ud(lsc_flat_ex_desc(devinfo, base_offset.ud));
+      } else if (base_offset.file != BAD_FILE) {
+         brw_reg tmp = ubld1.vgrf(BRW_TYPE_UD);
+         ubld1.SHL(tmp, base_offset, brw_imm_ud(12));
+         inst->src[1] = component(tmp, 0);
+      }
       break;
 
    default:
@@ -1665,6 +1696,9 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    const brw_reg arg = inst->src[SURFACE_LOGICAL_SRC_IMM_ARG];
    const brw_reg allow_sample_mask =
       inst->src[SURFACE_LOGICAL_SRC_ALLOW_SAMPLE_MASK];
+   const brw_reg base_offset =
+      retype(inst->src[SURFACE_LOGICAL_SRC_BASE_OFFSET], BRW_TYPE_UD);
+
    assert(arg.file == IMM);
    assert(allow_sample_mask.file == IMM);
    assert(dims.file == IMM);
@@ -1683,6 +1717,10 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
       inst->opcode == SHADER_OPCODE_TYPED_ATOMIC_LOGICAL;
 
    unsigned num_components = 0;
+
+   /** TGM messages cannot have a base offset */
+   if (devinfo->ver >= 20 && is_typed_access)
+      assert(base_offset.d == 0);
 
    unsigned ex_mlen = 0;
    brw_reg payload, payload2;
@@ -1815,7 +1853,8 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    } else {
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle,
+                                    base_offset);
    }
 
    /* Finally, the payload */
@@ -1901,7 +1940,8 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
    } else {
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle,
+                                    brw_reg());
    }
    inst->src[2] = addr;          /* payload */
    inst->src[3] = data;          /* payload2 */
@@ -2320,7 +2360,7 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle, brw_reg());
    } else {
       inst->desc =
          lsc_msg_desc(devinfo, LSC_OP_LOAD,
@@ -2333,7 +2373,7 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle, brw_reg());
 
       /* The byte scattered messages can only read one dword at a time so
        * we have to duplicate the message 4 times to read the full vec4.
@@ -2958,7 +2998,7 @@ brw_fs_lower_uniform_pull_constant_loads(fs_visitor &s)
          inst->resize_sources(3);
          setup_lsc_surface_descriptors(ubld, inst, inst->desc,
                                        surface.file != BAD_FILE ?
-                                       surface : surface_handle);
+                                       surface : surface_handle, brw_reg());
          inst->src[2] = payload;
 
          s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);

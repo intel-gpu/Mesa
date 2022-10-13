@@ -1309,11 +1309,12 @@ lsc_fence_msg_desc_backup_routing(UNUSED const struct intel_device_info *devinfo
 }
 
 static inline uint32_t
-lsc_bti_ex_desc(const struct intel_device_info *devinfo, unsigned bti)
+lsc_bti_ex_desc(const struct intel_device_info *devinfo, unsigned bti,
+                unsigned base_offset)
 {
    assert(devinfo->has_lsc);
    return SET_BITS(bti, 31, 24) |
-          SET_BITS(0, 23, 12);  /* base offset */
+          SET_BITS(devinfo->ver >= 20 ? base_offset : 0, 23, 12);  /* base offset */
 }
 
 static inline unsigned
@@ -1331,6 +1332,15 @@ lsc_bti_ex_desc_index(const struct intel_device_info *devinfo,
    assert(devinfo->has_lsc);
    return GET_BITS(ex_desc, 31, 24);
 }
+
+static inline unsigned
+lsc_flat_ex_desc(const struct intel_device_info *devinfo,
+                 uint32_t base_offset)
+{
+   assert(devinfo->has_lsc);
+   return SET_BITS(base_offset, 23, 12);
+}
+
 
 static inline unsigned
 lsc_flat_ex_desc_base_offset(const struct intel_device_info *devinfo,
