@@ -4516,6 +4516,8 @@ addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
    case nir_intrinsic_ssbo_atomic:
    case nir_intrinsic_ssbo_atomic_swap:
       return instr->src[1];
+   case nir_intrinsic_global_atomic:
+   case nir_intrinsic_global_atomic_swap:
    case nir_intrinsic_load_shared:
    case nir_intrinsic_shared_atomic:
    case nir_intrinsic_shared_atomic_swap:
@@ -8306,8 +8308,6 @@ fs_nir_emit_global_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
 
    brw_reg dest = get_nir_def(ntb, instr->def);
 
-   brw_reg addr = get_nir_src(ntb, instr->src[0]);
-
    brw_reg data;
    if (num_data >= 1)
       data = expand_to_32bit(bld, get_nir_src(ntb, instr->src[1]));
@@ -8323,7 +8323,7 @@ fs_nir_emit_global_atomic(nir_to_brw_state &ntb, const fs_builder &bld,
    }
 
    brw_reg srcs[A64_LOGICAL_NUM_SRCS];
-   srcs[A64_LOGICAL_ADDRESS] = addr;
+   srcs[A64_LOGICAL_ADDRESS] = base_address_for_instr(ntb, bld, instr);
    srcs[A64_LOGICAL_SRC] = data;
    srcs[A64_LOGICAL_ARG] = brw_imm_ud(op);
    srcs[A64_LOGICAL_ENABLE_HELPERS] = brw_imm_ud(0);
