@@ -186,6 +186,9 @@ st_texture_image_insert_transfer(struct gl_texture_image *stImage,
                                  unsigned index,
                                  struct pipe_transfer *transfer);
 
+GLuint
+st_texture_image_level(struct gl_texture_image *stImage);
+
 /* Return a pointer to an image within a texture.  Return image stride as
  * well.
  */
