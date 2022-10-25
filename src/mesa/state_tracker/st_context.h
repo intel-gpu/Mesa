@@ -345,6 +345,7 @@ struct st_context
 
    struct {
       struct hash_table *upload_cs;
+      struct pipe_resource *bc1_endpoint_buf;
    } compressed_fallback_cache;
 
    /** for drawing with st_util_vertex */

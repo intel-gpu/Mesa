@@ -55,6 +55,7 @@
 #include "main/texobj.h"
 #include "main/texstore.h"
 
+#include "state_tracker/bc1_tables.h"
 #include "state_tracker/st_debug.h"
 #include "state_tracker/st_context.h"
 #include "state_tracker/st_cb_bitmap.h"
@@ -501,6 +502,10 @@ st_destroy_compressed_fallback_cache(struct st_context *st)
     * _mesa_free_context_data -> ... -> free_shader_program_data_cb).
     */
    _mesa_hash_table_destroy(st->compressed_fallback_cache.upload_cs, NULL);
+
+   /* Destroy the SSBO used by the BC1 shader program. */
+   pipe_resource_reference(&st->compressed_fallback_cache.bc1_endpoint_buf,
+                           NULL);
 }
 
 /* Get a gl_program from a shader source created by sprintf-ing the variable
@@ -559,6 +564,48 @@ get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
                            key_shader, shProg);
 
    return get_compressed_fallback_cp(st, key_shader);
+}
+
+#define BC1_ENDPOINT_SSBO_SIZE \
+   (sizeof(float) * (sizeof(stb__OMatch5) + sizeof(stb__OMatch6)))
+
+static struct pipe_resource *
+get_bc1_endpoint_ssbo(struct st_context *st)
+{
+   /* Try the cache. */
+   if (st->compressed_fallback_cache.bc1_endpoint_buf)
+      return st->compressed_fallback_cache.bc1_endpoint_buf;
+
+   /* Cache miss. Allocate and initialize the endpoint buffer. */
+   struct pipe_resource *buffer =
+      pipe_buffer_create(st->screen, PIPE_BIND_SHADER_BUFFER,
+                         PIPE_USAGE_IMMUTABLE, BC1_ENDPOINT_SSBO_SIZE);
+   if (!buffer)
+      return NULL;
+
+   struct pipe_transfer *transfer;
+   float (*buffer_map)[2] = pipe_buffer_map(st->pipe, buffer,
+                                            PIPE_MAP_ONCE |
+                                            PIPE_MAP_WRITE |
+                                            PIPE_MAP_DISCARD_WHOLE_RESOURCE,
+                                            &transfer);
+   if (!buffer_map) {
+      pipe_resource_reference(&buffer, NULL);
+      return NULL;
+   }
+
+   for (int i = 0; i < 256; i++) {
+      for (int j = 0; j < 2; j++) {
+         buffer_map[i][j] = (float) stb__OMatch5[i][j];
+         buffer_map[i + 256][j] = (float) stb__OMatch6[i][j];
+      }
+   }
+
+   pipe_buffer_unmap(st->pipe, transfer);
+
+   /* Cache the buffer and check the cache again. */
+   st->compressed_fallback_cache.bc1_endpoint_buf = buffer;
+   return get_bc1_endpoint_ssbo(st);
 }
 
 void
