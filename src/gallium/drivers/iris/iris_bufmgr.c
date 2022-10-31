@@ -1330,6 +1330,11 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
 {
    struct iris_bo *bo;
 
+   if (bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE) {
+      printf("iris_bo_create_userptr() not implemented yet for Xe\n");
+      return NULL;
+   }
+
    bo = bo_calloc();
    if (!bo)
       return NULL;
