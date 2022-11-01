@@ -1961,6 +1961,13 @@ nir_image_intrinsic_coord_components(const nir_intrinsic_instr *instr);
 void nir_rewrite_image_intrinsic(nir_intrinsic_instr *instr,
                                  nir_ssa_def *handle, bool bindless);
 
+static inline bool
+nir_intrinsic_is_volatile(nir_intrinsic_instr *instr)
+{
+   return nir_intrinsic_has_access(instr) &&
+          (nir_intrinsic_access(instr) & ACCESS_VOLATILE);
+}
+
 /* Determine if an intrinsic can be arbitrarily reordered and eliminated. */
 static inline bool
 nir_intrinsic_can_reorder(nir_intrinsic_instr *instr)

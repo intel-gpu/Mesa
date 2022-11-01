@@ -68,8 +68,11 @@ instr_can_rewrite(const nir_instr *instr)
    case nir_instr_type_load_const:
    case nir_instr_type_phi:
       return true;
-   case nir_instr_type_intrinsic:
-      return nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr));
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+      return nir_intrinsic_can_reorder(intrin) &&
+             !nir_intrinsic_is_volatile(intrin);
+   }
    case nir_instr_type_call:
    case nir_instr_type_jump:
    case nir_instr_type_ssa_undef:
