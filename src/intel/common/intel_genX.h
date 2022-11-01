@@ -45,6 +45,10 @@ preferred_slm_allocation_size(const struct intel_device_info *devinfo)
    if (intel_device_info_is_dg2(devinfo) && devinfo->revision == 0)
       return SLM_ENCODES_128K;
 
+   /* Wa_14017341140 */
+   if (intel_device_info_is_mtl(devinfo) && devinfo->revision == 0)
+      return SLM_ENCODES_96K;
+
    return 0;
 }
 
