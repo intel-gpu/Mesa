@@ -248,7 +248,8 @@ pin_intrinsic(nir_intrinsic_instr *intrin)
 {
    nir_instr *instr = &intrin->instr;
 
-   if (!nir_intrinsic_can_reorder(intrin)) {
+   if (!nir_intrinsic_can_reorder(intrin) ||
+      nir_intrinsic_is_volatile(intrin)) {
       instr->pass_flags = GCM_INSTR_PINNED;
       return;
    }
