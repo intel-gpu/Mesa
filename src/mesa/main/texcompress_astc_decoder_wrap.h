@@ -35,6 +35,8 @@ typedef struct
 {
    void *data;
    uint32_t size;
+   struct gl_buffer_object *buf;
+   struct gl_texture_object *tex;
 } astc_decoder_lut;
 
 typedef struct
@@ -48,7 +50,8 @@ typedef struct
    void *partition_table;
    uint32_t partition_table_width;
    uint32_t partition_table_height;
-
+   struct gl_texture_object *partition_tex;
+   struct hash_table *partition_table_hash;
 } astc_decoder_lut_holder;
 
 void _mesa_init_astc_decoder_luts(astc_decoder_lut_holder *holder);

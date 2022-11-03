@@ -34,7 +34,7 @@
 #include "util/simple_mtx.h"
 
 #include "main/mtypes.h"
-
+#include "main/texcompress_astc_decoder_wrap.h"
 
 struct pipe_resource;
 
@@ -278,5 +278,11 @@ st_make_bound_samplers_resident(struct st_context *st,
 void
 st_make_bound_images_resident(struct st_context *st,
                               struct gl_program *prog);
+
+void
+st_initialize_astc_decoder(struct gl_context *ctx);
+
+void
+st_destroy_astc_decoder(struct gl_context *ctx);
 
 #endif

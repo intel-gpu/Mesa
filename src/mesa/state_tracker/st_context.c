@@ -383,6 +383,9 @@ st_destroy_context_priv(struct st_context *st, bool destroy_pipe)
    st_destroy_bound_texture_handles(st);
    st_destroy_bound_image_handles(st);
 
+   if (!st->has_astc_2d_ldr)
+      st_destroy_astc_decoder(st->ctx);
+
    /* free glReadPixels cache data */
    st_invalidate_readpix_cache(st);
    util_throttle_deinit(st->screen, &st->throttle);
@@ -806,7 +809,7 @@ st_create_context_priv(struct gl_context *ctx, struct pipe_context *pipe,
 
    /* Driver does not support ASTC, initialize astc decoder lookup tables. */
    if (!st->has_astc_2d_ldr)
-      _mesa_init_astc_decoder_luts(&st->astc_lut_holder);
+      st_initialize_astc_decoder(ctx);
 
    return st;
 }

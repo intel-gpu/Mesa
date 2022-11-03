@@ -88,6 +88,7 @@
 #include "pipe/p_shader_tokens.h"
 #include "util/u_tile.h"
 #include "util/format/u_format.h"
+#include "util/hash_table.h"
 #include "util/u_surface.h"
 #include "util/u_sampler.h"
 #include "util/u_math.h"
@@ -1080,6 +1081,172 @@ st_MapTextureImage(struct gl_context *ctx,
    }
 }
 
+/* Initializes a buffer object and texture for a astc_decoder_lut.
+ */
+static void
+init_astc_decoder_lut_gl(struct gl_context *ctx,
+                         astc_decoder_lut *lut,
+                         GLenum internal_format)
+{
+   lut->buf = _mesa_bufferobj_alloc(ctx, -1);
+   if (!lut->buf) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY,
+                  "error allocating astc decode buffers");
+      return;
+   }
+   bool success =
+      _mesa_bufferobj_data(ctx,
+                           GL_TEXTURE_BUFFER,
+                           lut->size,
+                           lut->data,
+                           GL_STATIC_DRAW, 0,
+                           lut->buf);
+   if (!success) {
+      _mesa_reference_buffer_object(ctx, &lut->buf, NULL);
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "failed to init texture buffer obj");
+      return;
+   }
+
+   /* Initialize a texture from buffer object (tbo). */
+   lut->tex = _mesa_new_texture_object(ctx, 0, GL_TEXTURE_BUFFER);
+   if (!lut->tex) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "failed to create new texture object");
+      return;
+   }
+
+   _mesa_reference_buffer_object(ctx, &lut->tex->BufferObject, lut->buf);
+
+   lut->tex->BufferObjectFormat = internal_format;
+   lut->tex->_BufferObjectFormat =
+      _mesa_get_texbuffer_format(ctx, internal_format);
+   lut->tex->BufferOffset = 0;
+   lut->tex->BufferSize = lut->size;
+   lut->tex->BufferObject->UsageHistory |= USAGE_TEXTURE_BUFFER;
+
+   _mesa_test_texobj_completeness(ctx, lut->tex);
+
+   assert(lut->tex->_BaseComplete);
+   assert(lut->tex->_MipmapComplete);
+}
+
+/* Initializes required GL resources for Granite ASTC GPU decode.
+ *
+ * There are 5 texture buffer objects and one additional texture required.
+ * We initialize 5 tbo's here and a single texture later during
+ * initialize_astc_decoder_partition_table.
+ */
+void
+st_initialize_astc_decoder(struct gl_context *ctx)
+{
+   struct st_context *st = st_context(ctx);
+   _mesa_init_astc_decoder_luts(&st->astc_lut_holder);
+
+   init_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.color_endpoint,
+                            GL_RGBA16UI);
+   init_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.color_endpoint_unquant,
+                            GL_R8UI);
+   init_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.weights,
+                            GL_RGBA8UI);
+   init_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.weights_unquant,
+                            GL_R8UI);
+   init_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.trits_quints,
+                            GL_R16UI);
+
+   st->astc_lut_holder.partition_table_hash =
+      _mesa_hash_table_create(NULL, _mesa_hash_uint, _mesa_key_uint_equal);
+}
+
+static void
+destroy_astc_decoder_lut_gl(struct gl_context *ctx,
+                            astc_decoder_lut *lut)
+{
+   _mesa_reference_buffer_object(ctx, &lut->buf, NULL);
+   _mesa_reference_buffer_object(ctx, &lut->tex->BufferObject,
+                                 NULL);
+
+   if (lut->tex)
+      _mesa_delete_texture_object(ctx, lut->tex);
+}
+
+void
+st_destroy_astc_decoder(struct gl_context *ctx)
+{
+   struct st_context *st = st_context(ctx);
+   destroy_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.color_endpoint);
+   destroy_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.color_endpoint_unquant);
+   destroy_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.weights);
+   destroy_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.weights_unquant);
+   destroy_astc_decoder_lut_gl(ctx, &st->astc_lut_holder.trits_quints);
+
+   /* Destroy partition table textures. */
+   hash_table_foreach(st->astc_lut_holder.partition_table_hash, entry)
+      _mesa_delete_texture_object(ctx, entry->data);
+
+   _mesa_hash_table_destroy(st->astc_lut_holder.partition_table_hash, NULL);
+}
+
+static void
+initialize_astc_decoder_partition_table(struct gl_context *ctx,
+                                        enum pipe_format pipe_format)
+{
+   struct st_context *st = st_context(ctx);
+
+   struct hash_entry *entry =
+      _mesa_hash_table_search(st->astc_lut_holder.partition_table_hash,
+                              &pipe_format);
+
+   struct gl_texture_object *texObj = entry ?
+      entry->data : NULL;
+
+   /* Found from cache. */
+   if (texObj) {
+      st->astc_lut_holder.partition_tex = texObj;
+      return;
+   }
+
+   /* Partition table texture. */
+   texObj = _mesa_new_texture_object(ctx, 0, GL_TEXTURE_2D);
+   if (!texObj) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "failed to create new texture object");
+      return;
+   }
+
+   texObj->Sampler.Attrib.MinFilter = GL_NEAREST;
+   texObj->Sampler.Attrib.MagFilter = GL_NEAREST;
+   texObj->Sampler.Attrib.state.min_img_filter = PIPE_TEX_FILTER_NEAREST;
+   texObj->Sampler.Attrib.state.min_mip_filter = PIPE_TEX_MIPFILTER_NONE;
+   texObj->Sampler.Attrib.state.mag_img_filter = PIPE_TEX_FILTER_NEAREST;
+
+   /* initialize level[0] texture image */
+   struct gl_texture_image *texImage =
+      _mesa_get_tex_image(ctx, texObj, GL_TEXTURE_2D, 0);
+
+   mesa_format tex_format =
+      st_ChooseTextureFormat(ctx, GL_TEXTURE_2D,
+                             GL_R8UI, GL_RED_INTEGER,
+                             GL_UNSIGNED_INT);
+
+   _mesa_init_teximage_fields(ctx, texImage,
+                              st->astc_lut_holder.partition_table_width,
+                              st->astc_lut_holder.partition_table_height,
+                              1, /* depth */
+                              0, /* border */
+                              GL_R8UI,
+                              tex_format);
+
+   st_TexImage(ctx, 2, texImage,
+               GL_RED_INTEGER, GL_UNSIGNED_BYTE,
+               st->astc_lut_holder.partition_table,
+               &ctx->DefaultPacking);
+
+   _mesa_test_texobj_completeness(ctx, texObj);
+   assert(texObj->_BaseComplete);
+
+   st->astc_lut_holder.partition_tex = texObj;
+
+   _mesa_hash_table_insert(st->astc_lut_holder.partition_table_hash,
+                           &pipe_format, texObj);
+}
 
 void
 st_UnmapTextureImage(struct gl_context *ctx,
