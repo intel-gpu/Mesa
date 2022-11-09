@@ -1181,6 +1181,7 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
    bo->real.protected = flags & BO_ALLOC_PROTECTED;
    bo->index = -1;
    bo->real.kflags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS | EXEC_OBJECT_PINNED;
+   bo->real.prime_fd = -1;
 
    /* By default, capture all driver-internal buffers like shader kernels,
     * surface states, dynamic states, border colors, and so on.
@@ -1294,6 +1295,7 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    bo->idle = true;
    bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY;
    bo->real.mmap_mode = iris_bo_create_userptr_get_mmap_mode(bufmgr);
+   bo->real.prime_fd = -1;
 
    return bo;
 
@@ -1356,6 +1358,7 @@ iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
    bo->gem_handle = open_arg.handle;
    bo->name = name;
    bo->real.global_name = handle;
+   bo->real.prime_fd = -1;
    bo->real.reusable = false;
    bo->real.imported = true;
    bo->real.mmap_mode = IRIS_MMAP_NONE;
@@ -1421,6 +1424,9 @@ bo_close(struct iris_bo *bo)
       vma_free(bo->bufmgr, bo->address, bo->size);
    else
       DBG("Unable to unbind vm of buf %u\n", bo->gem_handle);
+
+   if (bo->real.prime_fd != -1)
+      close(bo->real.prime_fd);
 
    /* Close this object */
    if (iris_bufmgr_bo_close(bufmgr, bo->gem_handle) != 0) {
@@ -1917,6 +1923,7 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.kflags |= EXEC_OBJECT_CAPTURE;
    bo->gem_handle = handle;
+   bo->real.prime_fd = dup(prime_fd);
 
    /* From the Bspec, Memory Compression - Gfx12:
     *
@@ -2002,6 +2009,9 @@ iris_bo_export_dmabuf(struct iris_bo *bo, int *prime_fd)
       return -errno;
 
    iris_bo_mark_exported(bo);
+
+   if (bo->real.prime_fd == -1)
+      bo->real.prime_fd = dup(*prime_fd);
 
    return 0;
 }
@@ -2204,6 +2214,7 @@ intel_aux_map_buffer_alloc(void *driver_ctx, uint32_t size)
                      EXEC_OBJECT_CAPTURE;
    bo->real.mmap_mode = iris_bo_alloc_aux_map_get_mmap_mode(bufmgr,
                                                             bo->real.heap);
+   bo->real.prime_fd = -1;
 
    buf->driver_bo = bo;
    buf->gpu = bo->address;
