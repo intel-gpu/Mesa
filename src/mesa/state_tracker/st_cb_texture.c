@@ -525,7 +525,8 @@ st_destroy_compressed_fallback_cache(struct st_context *st)
  * This function has an internal cache keyed on the key_shader address.
  */
 static struct gl_program *
-get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
+get_compressed_fallback_cp(struct st_context *st, enum pipe_format format,
+                           const char *shader_str, ...)
 {
    /* Initialize the program cache if non-existent. */
    if (!st->compressed_fallback_cache.upload_cs) {
@@ -535,10 +536,12 @@ get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
          return NULL;
    }
 
+   /* Format description used as the hash key. */
+   const void *key = util_format_description(format);
+
    /* Try to get the program from the cache. */
    struct hash_entry *entry =
-      _mesa_hash_table_search(st->compressed_fallback_cache.upload_cs,
-                              key_shader);
+      _mesa_hash_table_search(st->compressed_fallback_cache.upload_cs, key);
    if (entry) {
       struct gl_shader_program *shProg =
          (struct gl_shader_program *)entry->data;
@@ -548,8 +551,8 @@ get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
    /* Cache miss. Create the final shader string. */
    char *final_shader;
    va_list ap;
-   va_start(ap, key_shader);
-   int num_printed_bytes = vasprintf(&final_shader, key_shader, ap);
+   va_start(ap, shader_str);
+   int num_printed_bytes = vasprintf(&final_shader, shader_str, ap);
    va_end(ap);
    if (num_printed_bytes == -1)
       return NULL;
@@ -570,11 +573,11 @@ get_compressed_fallback_cp(struct st_context *st, const char *key_shader, ...)
       return NULL;
    }
 
-   /* Cache the program and check the cache again. */
+   /* Cache the program and return compute program. */
    _mesa_hash_table_insert(st->compressed_fallback_cache.upload_cs,
-                           key_shader, shProg);
+                           key, shProg);
 
-   return get_compressed_fallback_cp(st, key_shader);
+   return shProg->_LinkedShaders[MESA_SHADER_COMPUTE]->Program;
 }
 
 #define BC1_ENDPOINT_SSBO_SIZE \
@@ -772,7 +775,7 @@ cs_encode_bc1(struct st_context *st,
 
    /* Create the required compute state */
    struct gl_program *prog =
-      get_compressed_fallback_cp(st, bc1_source,
+      get_compressed_fallback_cp(st, PIPE_FORMAT_DXT1_RGB, bc1_source,
                                  cross_platform_settings_piece_all_header,
                                  uav_cross_platform_piece_all_header);
    if (!prog)
@@ -839,7 +842,7 @@ cs_encode_bc4(struct st_context *st,
 
    /* Create the required compute state */
    struct gl_program *prog =
-      get_compressed_fallback_cp(st, bc4_source,
+      get_compressed_fallback_cp(st, PIPE_FORMAT_RGTC1_UNORM, bc4_source,
                                  cross_platform_settings_piece_all_header,
                                  uav_cross_platform_piece_all_header);
    if (!prog)
@@ -907,7 +910,8 @@ cs_stitch_64bpb_textures(struct st_context *st,
 
    /* Create the required compute state */
    struct gl_program *prog =
-      get_compressed_fallback_cp(st, etc2_rgba_stitch_source,
+      get_compressed_fallback_cp(st, PIPE_FORMAT_ETC2_RGBA8,
+                                 etc2_rgba_stitch_source,
                                  cross_platform_settings_piece_all_header,
                                  uav_cross_platform_piece_all_header);
    if (!prog)
