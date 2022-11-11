@@ -627,6 +627,7 @@ bind_compute_state(struct st_context *st,
                    struct gl_program *prog,
                    struct pipe_sampler_view **sampler_views,
                    const struct pipe_shader_buffer *shader_buffers,
+                   const struct pipe_constant_buffer *constant_buffer,
                    const struct pipe_image_view *image_views,
                    bool cs_handle_from_prog,
                    bool constbuf0_from_prog)
@@ -667,7 +668,8 @@ bind_compute_state(struct st_context *st,
    }
 
    if (prog->affected_states & ST_NEW_CS_UBOS) {
-      unreachable("Uniform buffer objects not handled");
+      st->pipe->set_constant_buffer(st->pipe, PIPE_SHADER_COMPUTE, 1, false,
+                                    constant_buffer);
    }
 
    if (prog->affected_states & ST_NEW_CS_ATOMICS) {
@@ -691,6 +693,7 @@ dispatch_compute_state(struct st_context *st,
                        struct gl_program *prog,
                        struct pipe_sampler_view **sampler_views,
                        const struct pipe_shader_buffer *shader_buffers,
+                       const struct pipe_constant_buffer *constant_buffer,
                        const struct pipe_image_view *image_views,
                        unsigned num_workgroups_x,
                        unsigned num_workgroups_y,
@@ -699,8 +702,8 @@ dispatch_compute_state(struct st_context *st,
    assert(prog->info.stage == PIPE_SHADER_COMPUTE);
 
    /* Bind the state */
-   bind_compute_state(st, prog, sampler_views, shader_buffers, image_views,
-                      true, true);
+   bind_compute_state(st, prog, sampler_views, shader_buffers, constant_buffer,
+                      image_views, true, true);
 
    /* Launch the grid */
    const struct pipe_grid_info info = {
@@ -715,7 +718,7 @@ dispatch_compute_state(struct st_context *st,
    st->pipe->launch_grid(st->pipe, &info);
 
    /* Unbind the state */
-   bind_compute_state(st, prog, NULL, NULL, NULL, false, false);
+   bind_compute_state(st, prog, NULL, NULL, NULL, NULL, false, false);
 
    /* If the previously used compute program was relying on any state that was
     * trampled on by these state changes, dirty the relevant flags.
@@ -822,7 +825,7 @@ cs_encode_bc1(struct st_context *st,
                  GLSL_TYPE_UINT, 1);
 
    /* Dispatch the compute state */
-   dispatch_compute_state(st, prog, &rgba8_view, &sb, &image,
+   dispatch_compute_state(st, prog, &rgba8_view, &sb, NULL, &image,
                           DIV_ROUND_UP(rgba8_tex->width0, 32),
                           DIV_ROUND_UP(rgba8_tex->height0, 32), 1);
 
@@ -886,7 +889,7 @@ cs_encode_bc4(struct st_context *st,
                  GLSL_TYPE_UINT, 2);
 
    /* Dispatch the compute state */
-   dispatch_compute_state(st, prog, &rgba8_view, NULL, &image, 1,
+   dispatch_compute_state(st, prog, &rgba8_view, NULL, NULL, &image, 1,
                           DIV_ROUND_UP(rgba8_tex->width0, 16),
                           DIV_ROUND_UP(rgba8_tex->height0, 16));
 
@@ -948,7 +951,7 @@ cs_stitch_64bpb_textures(struct st_context *st,
       goto release_sampler_views;
 
    /* Dispatch the compute state */
-   dispatch_compute_state(st, prog, rg32_views, NULL, &image,
+   dispatch_compute_state(st, prog, rg32_views, NULL, NULL, &image,
                           DIV_ROUND_UP(tex_hi->width0 * 4, 32),
                           DIV_ROUND_UP(tex_hi->height0 * 4, 32), 1);
 
