@@ -93,8 +93,11 @@ struct iris_batch {
    /** Last binder address set in this hardware context. */
    uint64_t last_binder_address;
 
-   uint32_t ctx_id;
-   uint32_t exec_flags;
+   union {
+      uint32_t ctx_id; /* i915 specific  */
+      uint32_t engine_id; /* Xe specific */
+   };
+   uint32_t exec_flags; /* i915 specific  */
 
    /** A list of all BOs referenced by this batch */
    struct iris_bo **exec_bos;

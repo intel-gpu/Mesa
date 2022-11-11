@@ -44,6 +44,7 @@
 #include "iris_kmd_backend.h"
 #include "iris_utrace.h"
 #include "i915/iris_batch.h"
+#include "xe/iris_batch.h"
 
 #include "common/intel_aux_map.h"
 #include "common/intel_defines.h"
@@ -255,11 +256,24 @@ iris_init_batch(struct iris_context *ice,
 void
 iris_init_batches(struct iris_context *ice)
 {
+   struct iris_screen *screen = (struct iris_screen *)ice->ctx.screen;
+   struct iris_bufmgr *bufmgr = screen->bufmgr;
+   const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
+
    /* We have to do this early for iris_foreach_batch() to work */
    for (int i = 0; i < IRIS_BATCH_COUNT; i++)
-      ice->batches[i].screen = (void *) ice->ctx.screen;
+      ice->batches[i].screen = screen;
 
-   iris_i915_init_batches(ice);
+   switch (devinfo->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      iris_i915_init_batches(ice);
+      break;
+   case INTEL_KMD_TYPE_XE:
+      iris_xe_init_batches(ice);
+      break;
+   default:
+      unreachable("missing");
+   }
 
    iris_foreach_batch(ice, batch)
       iris_init_batch(ice, batch - &ice->batches[0]);
@@ -483,6 +497,7 @@ iris_batch_free(const struct iris_context *ice, struct iris_batch *batch)
 {
    struct iris_screen *screen = batch->screen;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
+   const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
 
    for (int i = 0; i < batch->exec_count; i++) {
       iris_bo_unreference(batch->exec_bos[i]);
@@ -506,7 +521,16 @@ iris_batch_free(const struct iris_context *ice, struct iris_batch *batch)
    batch->map = NULL;
    batch->map_next = NULL;
 
-   iris_i915_destroy_batch(batch);
+   switch (devinfo->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      iris_i915_destroy_batch(batch);
+      break;
+   case INTEL_KMD_TYPE_XE:
+      iris_xe_destroy_batch(batch);
+      break;
+   default:
+      unreachable("missing");
+   }
 
    iris_destroy_batch_measure(batch->measure);
    batch->measure = NULL;
@@ -656,7 +680,19 @@ iris_finish_batch(struct iris_batch *batch)
 static bool
 replace_kernel_ctx(struct iris_batch *batch)
 {
-   return iris_i915_replace_batch(batch);
+   struct iris_screen *screen = batch->screen;
+   struct iris_bufmgr *bufmgr = screen->bufmgr;
+   const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
+
+   switch (devinfo->kmd_type) {
+   case INTEL_KMD_TYPE_I915:
+      return iris_i915_replace_batch(batch);
+   case INTEL_KMD_TYPE_XE:
+      return iris_xe_replace_batch(batch);
+   default:
+      unreachable("missing");
+      return false;
+   }
 }
 
 enum pipe_reset_status
