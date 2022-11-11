@@ -79,6 +79,7 @@
 #include "compiler/glsl/bc1_glsl.h"
 #include "compiler/glsl/bc4_glsl.h"
 #include "compiler/glsl/etc2_rgba_stitch_glsl.h"
+#include "compiler/glsl/astc_glsl.h"
 
 #include "pipe/p_context.h"
 #include "pipe/p_defines.h"
@@ -101,6 +102,9 @@
 
 #define DBG if (0) printf
 
+static void
+initialize_astc_decoder_partition_table(struct gl_context *ctx,
+                                        enum pipe_format pipe_format);
 
 enum pipe_texture_target
 gl_target_to_pipe(GLenum target)
@@ -769,6 +773,154 @@ sw_decode_astc(struct st_context *st,
 }
 
 static bool
+cs_decode_astc(struct st_context *st,
+               struct pipe_resource **out_tex,
+               struct st_texture_image_transfer *itransfer,
+               mesa_format format)
+{
+   assert(*out_tex == NULL);
+
+   /* Determine block size for the compressed format. */
+   unsigned block_w, block_h;
+   _mesa_get_format_block_size(format, &block_w, &block_h);
+
+   /* Create the required compute state */
+   struct gl_program *prog =
+      get_compressed_fallback_cp(st, format, astc_source, block_w, block_h);
+   if (!prog)
+      return false;
+
+   /* Initialize partition table texture, depends on block size. */
+   _mesa_init_astc_decoder_partition_table(&st->astc_lut_holder,
+                                           block_w, block_h);
+   initialize_astc_decoder_partition_table(st->ctx, format);
+
+   /* Create astc decoder payload texture. */
+   struct pipe_resource src_templ = {
+      .target = PIPE_TEXTURE_2D,
+      .format = PIPE_FORMAT_R32G32B32A32_UINT,
+      .bind = PIPE_BIND_SAMPLER_VIEW,
+      .usage = PIPE_USAGE_DEFAULT,
+   };
+
+   uint32_t wblocks =
+      util_format_get_nblocksx(format, itransfer->box.width);
+   uint32_t hblocks =
+     util_format_get_nblocksy(format, itransfer->box.height);
+
+   st_gl_texture_dims_to_pipe_dims(GL_TEXTURE_2D, wblocks, hblocks, 1,
+                                   &src_templ.width0, &src_templ.height0,
+                                   &src_templ.depth0, &src_templ.array_size);
+
+   struct pipe_resource *payload =
+      st->screen->resource_create(st->screen, &src_templ);
+
+   if (!payload)
+      return false;
+
+   /* Upload data to payload texture. */
+   struct pipe_box box;
+   u_box_3d(itransfer->box.x,
+            itransfer->box.y,
+            0,
+            wblocks,
+            hblocks,
+            1, &box);
+
+   st->pipe->texture_subdata(st->pipe, payload, 0,
+                             PIPE_MAP_DISCARD_WHOLE_RESOURCE,
+                             &box,
+                             itransfer->temp_data,
+                             itransfer->temp_stride,
+                             0 /* unused */);
+
+   /* Create output texture. */
+   *out_tex =
+      st_texture_create(st, PIPE_TEXTURE_2D, PIPE_FORMAT_R8G8B8A8_UNORM, 0,
+                        itransfer->box.width,
+                        itransfer->box.height, 1, 1, 0,
+                        PIPE_BIND_SAMPLER_VIEW, false);
+   if (!*out_tex)
+      goto free_payload;
+
+   /* All lookup tables. */
+   struct gl_texture_object *astc_lut[] = {
+      st->astc_lut_holder.color_endpoint.tex,
+      st->astc_lut_holder.color_endpoint_unquant.tex,
+      st->astc_lut_holder.weights.tex,
+      st->astc_lut_holder.weights_unquant.tex,
+      st->astc_lut_holder.trits_quints.tex,
+      st->astc_lut_holder.partition_tex,
+   };
+
+   struct pipe_sampler_view *sampler_views[ARRAY_SIZE(astc_lut) + 1];
+   unsigned sv_index = 0;
+
+   /* 5 lookup tables that are TBOs */
+   for (sv_index = 0; sv_index < 5; sv_index++) {
+      sampler_views[sv_index] =
+          st_get_buffer_sampler_view_from_stobj(st, astc_lut[sv_index],
+                                                true);
+      assert(sampler_views[sv_index]);
+   }
+
+   /* Partition table, regular R8_UINT texture. */
+   struct pipe_sampler_view templ = {
+      .target = PIPE_TEXTURE_2D,
+      .format = astc_lut[sv_index]->pt->format,
+      .swizzle_r = PIPE_SWIZZLE_X,
+      .swizzle_g = PIPE_SWIZZLE_Y,
+      .swizzle_b = PIPE_SWIZZLE_Z,
+      .swizzle_a = PIPE_SWIZZLE_W,
+   };
+   sampler_views[sv_index] =
+      st->pipe->create_sampler_view(st->pipe, astc_lut[sv_index]->pt, &templ);
+   if (sampler_views[sv_index] == NULL)
+      goto free_payload;
+
+   sv_index++;
+
+   /* Payload sampler view. */
+   templ.format = PIPE_FORMAT_R32G32B32A32_UINT;
+   sampler_views[sv_index] =
+      st->pipe->create_sampler_view(st->pipe, payload, &templ);
+   assert(sampler_views[sv_index]);
+
+   /* Setup uniform buffer object. */
+   int values[] = {
+      itransfer->box.width,
+      itransfer->box.height,
+      block_w,
+      block_h,
+   };
+
+   struct pipe_constant_buffer cb = {
+      .buffer = NULL,
+      .user_buffer = &values,
+      .buffer_offset = 0,
+      .buffer_size = sizeof(values),
+   };
+
+   /* set up destination image */
+   struct pipe_image_view image = {
+      .resource = *out_tex,
+      .format = PIPE_FORMAT_R8G8B8A8_UNORM,
+      .access = PIPE_IMAGE_ACCESS_WRITE,
+      .shader_access = PIPE_IMAGE_ACCESS_WRITE,
+   };
+
+   dispatch_compute_state(st, prog, sampler_views, NULL, &cb, &image,
+                          wblocks, hblocks, 1);
+
+free_payload:
+
+   if (payload)
+      pipe_resource_reference(&payload, NULL);
+
+   return *out_tex != NULL;
+}
+
+static bool
 cs_encode_bc1(struct st_context *st,
               struct pipe_resource **out_tex,
               struct pipe_resource *rgba8_tex,
@@ -990,8 +1142,10 @@ unmap_cs_transcode_astc_to_dxt5(struct st_context *st,
    struct pipe_resource *bc4_tex = NULL;
    struct pipe_resource *bc3_tex = NULL;
 
-   if (!sw_decode_astc(st, &rgba8_tex, itransfer, texImage->TexFormat))
+   if (!cs_decode_astc(st, &rgba8_tex, itransfer, texImage->TexFormat))
       return false;
+
+   st->pipe->memory_barrier(st->pipe, PIPE_BARRIER_TEXTURE);
 
    if (!cs_encode_bc1(st, &bc1_tex, rgba8_tex, true))
       goto release_textures;
