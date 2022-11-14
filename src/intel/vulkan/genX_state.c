@@ -195,7 +195,7 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       sba.StatelessDataPortAccessMOCS = mocs;
 
       sba.SurfaceStateBaseAddress =
-         (struct anv_address) { .offset = INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS };
+         (struct anv_address) { .offset = SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS };
       sba.SurfaceStateMOCS = mocs;
       sba.SurfaceStateBaseAddressModifyEnable = true;
 

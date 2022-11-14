@@ -1066,7 +1066,8 @@ anv_descriptor_pool_alloc_state(struct anv_descriptor_pool *pool)
       assert(state.alloc_size == 64);
       return state;
    } else {
-      struct anv_state state = anv_state_stream_alloc(&pool->surface_state_stream, 64, 64);
+      struct anv_state state =
+         anv_state_stream_alloc(&pool->surface_state_stream, 64, 64);
       return state;
    }
 }

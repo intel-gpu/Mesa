@@ -1088,7 +1088,7 @@ binding_table_for_surface_state(struct anv_cmd_buffer *cmd_buffer,
       return result;
 
    uint32_t *bt_map = bt_state.map;
-   bt_map[0] = surface_state.offset + state_offset;
+   bt_map[0] = INTERNAL_STATE_BASE_OFFSET + surface_state.offset + state_offset;
 
    *bt_offset = bt_state.offset;
    return VK_SUCCESS;

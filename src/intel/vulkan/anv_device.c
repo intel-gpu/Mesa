@@ -3062,9 +3062,11 @@ decode_get_bo(void *v_batch, bool ppgtt, uint64_t address)
       return ret_bo;
    if (get_bo_from_pool(&ret_bo, &device->binding_table_pool.block_pool, address))
       return ret_bo;
-   if (get_bo_from_pool(&ret_bo, &device->internal_surface_state_pool.block_pool, address))
+   if (get_bo_from_pool(&ret_bo, &device->scratch_surface_state_pool.block_pool, address))
       return ret_bo;
    if (get_bo_from_pool(&ret_bo, &device->bindless_surface_state_pool.block_pool, address))
+      return ret_bo;
+   if (get_bo_from_pool(&ret_bo, &device->internal_surface_state_pool.block_pool, address))
       return ret_bo;
 
    if (!device->cmd_buffer_being_decoded)
@@ -3294,7 +3296,7 @@ VkResult anv_CreateDevice(
                                   decode_get_bo, NULL, device);
 
       device->decoder_ctx.dynamic_base = DYNAMIC_STATE_POOL_MIN_ADDRESS;
-      device->decoder_ctx.surface_base = INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS;
+      device->decoder_ctx.surface_base = SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS;
       device->decoder_ctx.instruction_base =
          INSTRUCTION_STATE_POOL_MIN_ADDRESS;
    }
@@ -3436,11 +3438,17 @@ VkResult anv_CreateDevice(
    if (result != VK_SUCCESS)
       goto fail_dynamic_state_pool;
 
+   result = anv_state_pool_init(&device->scratch_surface_state_pool, device,
+                                "scratch surface state pool",
+                                SCRATCH_SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
+   if (result != VK_SUCCESS)
+      goto fail_instruction_state_pool;
+
    result = anv_state_pool_init(&device->internal_surface_state_pool, device,
                                 "internal surface state pool",
                                 INTERNAL_SURFACE_STATE_POOL_MIN_ADDRESS, 0, 4096);
    if (result != VK_SUCCESS)
-      goto fail_instruction_state_pool;
+      goto fail_scratch_state_pool;
 
    result = anv_state_pool_init(&device->bindless_surface_state_pool, device,
                                 "bindless surface state pool",
@@ -3649,6 +3657,8 @@ VkResult anv_CreateDevice(
    anv_state_pool_finish(&device->bindless_surface_state_pool);
  fail_internal_surface_state_pool:
    anv_state_pool_finish(&device->internal_surface_state_pool);
+ fail_scratch_state_pool:
+   anv_state_pool_finish(&device->scratch_surface_state_pool);
  fail_instruction_state_pool:
    anv_state_pool_finish(&device->instruction_state_pool);
  fail_dynamic_state_pool:

@@ -2363,7 +2363,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             surface_state = cmd_buffer->state.gfx.null_surface_state;
          }
          assert(surface_state.map);
-         bt_map[s] = surface_state.offset + state_offset;
+         bt_map[s] = INTERNAL_STATE_BASE_OFFSET + surface_state.offset + state_offset;
          break;
 
       case ANV_DESCRIPTOR_SET_NUM_WORK_GROUPS: {
@@ -2383,7 +2383,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                                        12, 1);
 
          assert(surface_state.map);
-         bt_map[s] = surface_state.offset + state_offset;
+         bt_map[s] = INTERNAL_STATE_BASE_OFFSET + surface_state.offset + state_offset;
          break;
       }
 
@@ -2395,7 +2395,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             pipe_state->descriptors[binding->index];
          assert(set->desc_mem.alloc_size);
          assert(set->desc_surface_state.alloc_size);
-         bt_map[s] = set->desc_surface_state.offset + state_offset;
+         bt_map[s] = INTERNAL_STATE_BASE_OFFSET + set->desc_surface_state.offset + state_offset;
          add_surface_reloc(cmd_buffer, set->desc_surface_state,
                            anv_descriptor_set_address(set));
          break;
@@ -2422,6 +2422,13 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
             continue;
          }
          const struct anv_descriptor *desc = &set->descriptors[binding->index];
+         /* Relative offset in the STATE_BASE_ADDRESS::SurfaceStateBaseAddress
+          * heap. Depending on where the descriptor surface state is
+          * allocated, they can either come from
+          * device->internal_surface_state_pool or
+          * device->bindless_surface_state_pool.
+          */
+         uint32_t relative_heap_offset = INTERNAL_STATE_BASE_OFFSET;
 
          switch (desc->type) {
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
@@ -2437,8 +2444,8 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                   (desc->layout == VK_IMAGE_LAYOUT_GENERAL) ?
                   desc->image_view->planes[binding->plane].general_sampler_surface_state :
                   desc->image_view->planes[binding->plane].optimal_sampler_surface_state;
-               surface_state =
-                  anv_bindless_state_for_binding_table(sstate.state);
+               relative_heap_offset = BINDLESS_STATE_BASE_OFFSET;
+               surface_state = sstate.state;
                assert(surface_state.alloc_size);
             } else {
                surface_state = cmd_buffer->device->null_surface_state;
@@ -2452,10 +2459,12 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
                   binding->lowered_storage_surface
                   ? desc->image_view->planes[binding->plane].lowered_storage_surface_state
                   : desc->image_view->planes[binding->plane].storage_surface_state;
-               surface_state =
-                  anv_bindless_state_for_binding_table(sstate.state);
+               const bool lowered_surface_state_is_null =
+                  desc->image_view->planes[binding->plane].lowered_surface_state_is_null;
+               relative_heap_offset = BINDLESS_STATE_BASE_OFFSET;
+               surface_state = sstate.state;
                assert(surface_state.alloc_size);
-               if (surface_state.offset == 0) {
+               if (binding->lowered_storage_surface && lowered_surface_state_is_null) {
                   mesa_loge("Bound a image to a descriptor where the "
                             "descriptor does not have NonReadable "
                             "set and the image does not have a "
@@ -2487,8 +2496,8 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 
          case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
             if (desc->buffer_view) {
-               surface_state = anv_bindless_state_for_binding_table(
-                  desc->buffer_view->surface_state);
+               relative_heap_offset = BINDLESS_STATE_BASE_OFFSET;
+               surface_state = desc->buffer_view->surface_state;
                assert(surface_state.alloc_size);
             } else {
                surface_state = cmd_buffer->device->null_surface_state;
@@ -2535,10 +2544,10 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 
          case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
             if (desc->buffer_view) {
-               surface_state = anv_bindless_state_for_binding_table(
-                  binding->lowered_storage_surface
+               relative_heap_offset = BINDLESS_STATE_BASE_OFFSET;
+               surface_state = binding->lowered_storage_surface
                   ? desc->buffer_view->lowered_storage_surface_state
-                  : desc->buffer_view->storage_surface_state);
+                  : desc->buffer_view->storage_surface_state;
                assert(surface_state.alloc_size);
             } else {
                surface_state = cmd_buffer->device->null_surface_state;
@@ -2551,7 +2560,7 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
          }
 
          assert(surface_state.map);
-         bt_map[s] = surface_state.offset + state_offset;
+         bt_map[s] = relative_heap_offset + surface_state.offset + state_offset;
          break;
       }
       }
