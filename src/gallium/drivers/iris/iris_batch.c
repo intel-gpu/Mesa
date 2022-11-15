@@ -236,7 +236,7 @@ iris_init_batch(struct iris_context *ice,
                                   decode_get_bo, decode_get_state_size, batch);
       batch->decoder.dynamic_base = IRIS_MEMZONE_DYNAMIC_START;
       batch->decoder.instruction_base = IRIS_MEMZONE_SHADER_START;
-      batch->decoder.surface_base = IRIS_MEMZONE_BINDER_START;
+      batch->decoder.surface_base = IRIS_MEMZONE_SCRATCH_START;
       batch->decoder.max_vbo_decoded_lines = 32;
       if (batch->name == IRIS_BATCH_BLITTER)
          batch->decoder.engine = INTEL_ENGINE_CLASS_COPY;

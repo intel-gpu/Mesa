@@ -123,7 +123,7 @@ blorp_get_surface_address(struct blorp_batch *blorp_batch,
 UNUSED static struct blorp_address
 blorp_get_surface_base_address(UNUSED struct blorp_batch *blorp_batch)
 {
-   return (struct blorp_address) { .offset = IRIS_MEMZONE_BINDER_START };
+   return (struct blorp_address) { .offset = IRIS_MEMZONE_SCRATCH_START };
 }
 
 static void *
