@@ -5445,6 +5445,7 @@ void genX(CmdBeginRendering)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
    VkResult result;
 
    if (!anv_cmd_buffer_is_render_queue(cmd_buffer)) {
@@ -5473,6 +5474,7 @@ void genX(CmdBeginRendering)(
    const VkRect2D render_area = gfx->render_area;
    const uint32_t layers =
       is_multiview ? util_last_bit(gfx->view_mask) : gfx->layer_count;
+   UNUSED VkAccessFlags2 src_flush_flags = 0, dst_invalidate_flags = 0;
 
    /* The framebuffer size is at least large enough to contain the render
     * area.  Because a zero renderArea is possible, we MAX with 1.
@@ -5562,6 +5564,10 @@ void genX(CmdBeginRendering)(
                                        VK_QUEUE_FAMILY_IGNORED,
                                        fast_clear);
             }
+#if GFX_VER >= 20
+            src_flush_flags |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            dst_invalidate_flags |= VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+#endif
          }
 
          uint32_t clear_view_mask = pRenderingInfo->viewMask;
@@ -5779,6 +5785,11 @@ void genX(CmdBeginRendering)(
                                        initial_depth_layout, depth_layout,
                                        hiz_clear);
             }
+#if GFX_VER >= 20
+            src_flush_flags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dst_invalidate_flags |=
+               VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+#endif
          }
 
          if (stencil_layout != initial_stencil_layout) {
@@ -5805,6 +5816,11 @@ void genX(CmdBeginRendering)(
                                          stencil_layout,
                                          hiz_clear);
             }
+#if GFX_VER >= 20
+            src_flush_flags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            dst_invalidate_flags |=
+               VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+#endif
          }
 
          if (is_multiview) {
@@ -5914,7 +5930,32 @@ void genX(CmdBeginRendering)(
     */
    gfx->dirty |= ANV_CMD_DIRTY_PIPELINE;
 
-#if GFX_VER >= 11
+   if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+#if GFX_VER >= 20
+      struct GENX(RESOURCE_BARRIER_BODY) body =
+         anv_resource_barrier_body_for_access_flags(cmd_buffer,
+                                                    src_flush_flags,
+                                                    dst_invalidate_flags);
+      body.WaitStage = RESOURCE_BARRIER_STAGE_TOP;
+      body.SignalStage = RESOURCE_BARRIER_STAGE_COLOR;
+      anv_emit_barrier_for_type(cmd_buffer,
+                                body,
+                                RESOURCE_BARRIER_TYPE_IMMEDIATE);
+#endif // GFX_VER >= 20
+   }
+
+  /* The PIPE_CONTROL command description says:
+   *
+   *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
+   *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
+   *     Target Cache Flush by enabling this bit. When render target flush
+   *     is set due to new association of BTI, PS Scoreboard Stall bit must
+   *     be set in this packet."
+   *
+   * We assume that a new BeginRendering is always changing the RTs, which
+   * may not be true and cause excessive flushing.  We can trivially skip it
+   * in the case that there are no RTs (depth-only rendering), though.
+   */
    bool has_color_att = false;
    for (uint32_t i = 0; i < gfx->color_att_count; i++) {
       if (pRenderingInfo->pColorAttachments[i].imageView != VK_NULL_HANDLE) {
@@ -5922,25 +5963,28 @@ void genX(CmdBeginRendering)(
          break;
       }
    }
+
    if (has_color_att) {
-      /* The PIPE_CONTROL command description says:
-      *
-      *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
-      *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
-      *     Target Cache Flush by enabling this bit. When render target flush
-      *     is set due to new association of BTI, PS Scoreboard Stall bit must
-      *     be set in this packet."
-      *
-      * We assume that a new BeginRendering is always changing the RTs, which
-      * may not be true and cause excessive flushing.  We can trivially skip it
-      * in the case that there are no RTs (depth-only rendering), though.
-      */
-      anv_add_pending_pipe_bits(cmd_buffer,
-                              ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
-                              ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
-                              "change RT");
+      if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+#if GFX_VER >= 20
+         struct GENX(RESOURCE_BARRIER_BODY) body =
+            anv_resource_barrier_body_for_access_flags(cmd_buffer,
+                                                       VK_ACCESS_2_NONE,
+                                                       VK_ACCESS_2_NONE);
+         body.ColorCache |= true;
+         body.WaitStage = RESOURCE_BARRIER_STAGE_TOP;
+         body.SignalStage = RESOURCE_BARRIER_STAGE_COLOR;
+         anv_emit_barrier_for_type(cmd_buffer,
+                                    body,
+                                    RESOURCE_BARRIER_TYPE_IMMEDIATE);
+#endif // GFX_VER >= 20
+      } else {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                 ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                                 ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
+                                 "change RT");
+      }
    }
-#endif
 
    cmd_buffer_emit_depth_stencil(cmd_buffer);
 
@@ -5986,6 +6030,7 @@ void genX(CmdEndRendering)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
    struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
 
    if (anv_batch_has_error(&cmd_buffer->batch))
       return;
@@ -5993,6 +6038,7 @@ void genX(CmdEndRendering)(
    const bool is_multiview = gfx->view_mask != 0;
    const uint32_t layers =
       is_multiview ? util_last_bit(gfx->view_mask) : gfx->layer_count;
+   UNUSED VkAccessFlags2 src_flush_flags = 0, dst_invalidate_flags = 0;
 
    for (uint32_t i = 0; i < gfx->color_att_count; i++) {
       cmd_buffer_mark_attachment_written(cmd_buffer, &gfx->color_att[i],
@@ -6019,14 +6065,20 @@ void genX(CmdEndRendering)(
       }
 
       if (has_color_resolve) {
-         /* We are about to do some MSAA resolves.  We need to flush so that
-          * the result of writes to the MSAA color attachments show up in the
-          * sampler when we blit to the single-sampled resolve target.
+#if GFX_VER >= 20
+         src_flush_flags |= VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
+         dst_invalidate_flags |= VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+#else
+         /* We are about to do some MSAA resolves.  We need to flush so that the
+          * result of writes to the MSAA color attachments show up in the sampler
+          * when we blit to the single-sampled resolve target.
           */
          anv_add_pending_pipe_bits(cmd_buffer,
                                    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
                                    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
                                    "MSAA resolve");
+#endif
       }
 
       const bool has_depth_resolve =
@@ -6041,15 +6093,38 @@ void genX(CmdEndRendering)(
          anv_image_is_sparse(gfx->stencil_att.iview->image);
 
       if (has_depth_resolve || has_stencil_resolve) {
-         /* We are about to do some MSAA resolves.  We need to flush so that
-          * the result of writes to the MSAA depth attachments show up in the
-          * sampler when we blit to the single-sampled resolve target.
-          */
+#if GFX_VER >= 20
+         src_flush_flags |= VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+         dst_invalidate_flags |= VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT;
+#else
+         /* We are about to do some MSAA resolves.  We need to flush so that the
+         * result of writes to the MSAA depth attachments show up in the sampler
+         * when we blit to the single-sampled resolve target.
+         */
          anv_add_pending_pipe_bits(cmd_buffer,
                                  ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
                                  ANV_PIPE_DEPTH_CACHE_FLUSH_BIT,
                                  "MSAA resolve");
+#endif
       }
+
+   if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+#if GFX_VER >= 20
+      struct GENX(RESOURCE_BARRIER_BODY) body =
+         anv_resource_barrier_body_for_access_flags(cmd_buffer,
+                                                    src_flush_flags,
+                                                    dst_invalidate_flags);
+      body.WaitStage = RESOURCE_BARRIER_STAGE_TOP;
+      body.SignalStage = anv_cmd_buffer_is_compute_queue(cmd_buffer) ?
+         RESOURCE_BARRIER_STAGE_GPGPU : RESOURCE_BARRIER_STAGE_TOP;
+      anv_emit_barrier_for_type(cmd_buffer,
+                                body,
+                                RESOURCE_BARRIER_TYPE_IMMEDIATE);
+      src_flush_flags = 0;
+      dst_invalidate_flags = 0;
+#endif // GFX_VER >= 20
+   }
 
       if (has_sparse_color_resolve || has_sparse_depth_resolve ||
           has_sparse_stencil_resolve) {
