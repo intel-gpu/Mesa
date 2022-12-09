@@ -2104,14 +2104,14 @@ iris_bo_export_gem_handle_for_device(struct iris_bo *bo, int drm_fd,
     * times.
     */
    struct iris_bufmgr *bufmgr = bo->bufmgr;
-   int ret = os_same_file_description(drm_fd, bufmgr->fd);
+   /*int ret = os_same_file_description(drm_fd, bufmgr->fd);
    WARN_ONCE(ret < 0,
              "Kernel has no file descriptor comparison support: %s\n",
              strerror(errno));
    if (ret == 0) {
       *out_handle = iris_bo_export_gem_handle(bo);
       return 0;
-   }
+   }*/
 
    struct bo_export *export = calloc(1, sizeof(*export));
    if (!export)
