@@ -1375,6 +1375,15 @@ iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
    if (bo->address == 0ull)
       goto err_free;
 
+   if (needs_prime_fd(bufmgr)) {
+      if (drmPrimeHandleToFD(bufmgr->fd, bo->gem_handle,
+                             DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+         fprintf(stderr, "Failed to get prime fd from bo name %u\n",
+                 bo->gem_handle);
+         goto err_vm_alloc;
+      }
+   }
+
    if (!bufmgr->kmd_backend->gem_vm_bind(bo))
       goto err_vm_alloc;
 
