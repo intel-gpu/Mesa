@@ -1323,6 +1323,12 @@ iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
    if (!bufmgr->kmd_backend->gem_vm_bind(bo))
       goto err_vm_alloc;
 
+   if (drmPrimeHandleToFD(iris_bufmgr_get_fd(bufmgr), bo->gem_handle,
+                          DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+      fprintf(stderr, "failed to get prime fd for buffer %u\n",
+              bo->gem_handle);
+   }
+
    _mesa_hash_table_insert(bufmgr->handle_table, &bo->gem_handle, bo);
    _mesa_hash_table_insert(bufmgr->name_table, &bo->real.global_name, bo);
 
@@ -1999,6 +2005,12 @@ iris_bo_flink(struct iris_bo *bo, uint32_t *name)
          _mesa_hash_table_insert(bufmgr->name_table, &bo->real.global_name, bo);
       }
       simple_mtx_unlock(&bufmgr->lock);
+
+      if (drmPrimeHandleToFD(iris_bufmgr_get_fd(bufmgr), bo->gem_handle,
+                             DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+         fprintf(stderr, "failed to get prime fd for buffer %u\n",
+                 bo->gem_handle);
+      }
    }
 
    *name = bo->real.global_name;
