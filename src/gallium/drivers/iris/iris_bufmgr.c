@@ -1343,6 +1343,15 @@ iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
    if (bo->address == 0ull)
       goto err_free;
 
+   if (needs_prime_fd_dup(bufmgr)) {
+      if (drmPrimeHandleToFD(iris_bufmgr_get_fd(bufmgr), bo->gem_handle,
+                             DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+         fprintf(stderr, "Failed to get prime fd from bo name %u\n",
+                 bo->gem_handle);
+         goto err_vm_alloc;
+      }
+   }
+
    if (!bufmgr->kmd_backend->gem_vm_bind(bo))
       goto err_vm_alloc;
 
@@ -2016,12 +2025,19 @@ iris_bo_flink(struct iris_bo *bo, uint32_t *name)
       if (intel_ioctl(bufmgr->fd, DRM_IOCTL_GEM_FLINK, &flink))
          return -errno;
 
-      simple_mtx_lock(&bufmgr->lock);
-      if (!bo->real.global_name) {
-         iris_bo_mark_exported_locked(bo);
-         bo->real.global_name = flink.name;
-         _mesa_hash_table_insert(bufmgr->name_table, &bo->real.global_name, bo);
+      if (needs_prime_fd_dup(bufmgr)) {
+         if (drmPrimeHandleToFD(iris_bufmgr_get_fd(bufmgr), bo->gem_handle,
+                                DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+            fprintf(stderr, "Failed to get prime fd for bo flink %u\n",
+                    bo->gem_handle);
+            return -1;
+         }
       }
+
+      simple_mtx_lock(&bufmgr->lock);
+      iris_bo_mark_exported_locked(bo);
+      bo->real.global_name = flink.name;
+      _mesa_hash_table_insert(bufmgr->name_table, &bo->real.global_name, bo);
       simple_mtx_unlock(&bufmgr->lock);
    }
 
