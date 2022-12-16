@@ -762,7 +762,9 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
 #endif
 #if GFX_VER == 12
       s.MemoryCompressionEnable = info->aux_usage == ISL_AUX_USAGE_MC;
+#endif
 
+#if GFX_VER == 12
       /* The Tiger Lake PRM for RENDER_SURFACE_STATE::DecompressInL3 says:
        *
        *    When this field is set to 1h, the associated compressible surface,
