@@ -668,7 +668,7 @@ option(
 option (
   'intel-xe-kmd',
   type : 'feature',
-  value : 'disabled',
+  value : 'enabled',
   description: 'Enable Intel Xe KMD support.'
 )
 
