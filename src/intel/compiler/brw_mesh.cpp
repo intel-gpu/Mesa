@@ -21,6 +21,8 @@
  * IN THE SOFTWARE.
  */
 
+#include <list>
+#include <vector>
 #include "brw_compiler.h"
 #include "brw_fs.h"
 #include "brw_nir.h"
@@ -411,6 +413,213 @@ brw_nir_lower_tue_inputs(nir_shader *nir, const brw_tue_map *map)
             nir_address_format_32bit_offset);
 }
 
+static void
+brw_mue_assign_position(struct nir_shader *nir,
+                        nir_variable *var,
+                        struct brw_mue_map *map,
+                        unsigned start_dw,
+                        unsigned *dwords,
+                        unsigned *slots)
+{
+   const struct glsl_type *type = brw_nir_get_var_type(nir, var);
+   *dwords = glsl_count_dword_slots(type, false);
+   *slots  = glsl_count_attribute_slots(type, false);
+   bool is_array = glsl_type_is_array(type);
+   int location = var->data.location;
+   unsigned remaining = *dwords;
+
+   for (unsigned slot = 0; slot < *slots; ++slot) {
+      map->start_dw[location + slot] = start_dw;
+
+      unsigned sz;
+
+      if (is_array) {
+         assert(*dwords % *slots == 0);
+         sz = *dwords / *slots;
+      } else {
+         sz = MIN2(remaining, 4);
+      }
+
+      map->len_dw[location + slot] = sz;
+      start_dw += sz;
+      remaining -= sz;
+   }
+}
+
+static nir_variable *
+brw_nir_find_complete_variable_with_location(nir_shader *shader,
+                                             nir_variable_mode mode,
+                                             int location)
+{
+   nir_variable *best_var = NULL;
+   unsigned last_size = 0;
+
+   nir_foreach_variable_with_modes(var, shader, mode) {
+      if (var->data.location != location)
+         continue;
+
+      unsigned new_size = glsl_count_dword_slots(var->type, false);
+      if (new_size > last_size) {
+         best_var = var;
+         last_size = new_size;
+      }
+   }
+
+   return best_var;
+}
+
+/* Attribute types. Flat attributes have to be a separate class because
+ * flat and interpolated attributes can't share the same vec4 slot
+ * (see 3DSTATE_SBE.ConstantInterpolationEnable).
+ */
+enum {
+   PRIM, /* per primitive */
+   VERT, /* per vertex interpolated */
+   VERT_FLAT, /* per vertex flat */
+};
+
+struct attr_type_info {
+   /* order of attributes, negative values are holes */
+   std::list<int> *order;
+
+   /* attributes after which there's hole of size equal to array index */
+   std::list<int> holes[4];
+};
+
+/* Finds order of outputs which require minimum size, without splitting
+ * of URB read/write messages (which operate on vec4-aligned memory).
+ */
+static void
+brw_compute_mue_layout(std::list<int> *orders,
+                       uint64_t outputs_written,
+                       struct nir_shader *nir)
+{
+   const struct shader_info *info = &nir->info;
+
+   struct attr_type_info data[3];
+   bool no_compact = !debug_get_bool_option("BRW_MESH_COMPACTION", true);
+
+   for (unsigned i = PRIM; i <= VERT_FLAT; ++i)
+      data[i].order = &orders[i];
+
+   u_foreach_bit64(location, outputs_written) {
+      if ((BITFIELD64_BIT(location) & outputs_written) == 0)
+         continue;
+
+      nir_variable *var =
+            brw_nir_find_complete_variable_with_location(nir,
+                                                         nir_var_shader_out,
+                                                         location);
+      const struct glsl_type *type = brw_nir_get_var_type(nir, var);
+      unsigned dwords = glsl_count_dword_slots(type, false);
+      unsigned slots  = glsl_count_attribute_slots(type, false);
+
+      struct attr_type_info *type_data;
+
+      if (BITFIELD64_BIT(location) & info->per_primitive_outputs)
+         type_data = &data[PRIM];
+      else if (var->data.interpolation == INTERP_MODE_FLAT)
+         type_data = &data[VERT_FLAT];
+      else
+         type_data = &data[VERT];
+
+      outputs_written &= ~BITFIELD64_RANGE(location, slots);
+
+      int mod = dwords % 4;
+      if (mod == 0) {
+         type_data->order->push_back(location);
+         continue;
+      }
+
+      if (no_compact) {
+         type_data->order->push_back(location);
+         type_data->order->push_back(-(4 - mod));
+         continue;
+      }
+
+      if (dwords > 4) {
+         type_data->order->push_back(location);
+         int hole = 4 - mod;
+         type_data->order->push_back(-hole);
+         type_data->holes[hole].push_back(location);
+         continue;
+      }
+
+      assert(dwords < 4);
+
+      unsigned found = 0;
+      /* try to find the smallest hole big enough to hold this attribute */
+      for (unsigned sz = dwords; sz < 4; sz++){
+         if (!type_data->holes[sz].empty()) {
+            found = sz;
+            break;
+         }
+      }
+
+      /* append at the end if not found */
+      if (found == 0) {
+         type_data->order->push_back(location);
+         int hole = 4 - mod;
+         type_data->order->push_back(-hole);
+         type_data->holes[hole].push_back(location);
+
+         continue;
+      }
+
+      assert(found < 4);
+      assert(!type_data->holes[found].empty());
+      int after_loc = type_data->holes[found].back();
+      type_data->holes[found].pop_back();
+
+      bool inserted_back = false;
+
+      for (std::list<int>::iterator it = type_data->order->begin();
+                                    it != type_data->order->end();
+                                    ++it) {
+         if ((*it) != after_loc)
+            continue;
+
+         ++it;
+         /* must be a hole */
+         assert((*it) < 0);
+         /* and it must be big enough */
+         assert(dwords <= (unsigned)-(*it));
+
+         if (dwords == (unsigned)-(*it)) {
+            /* exact size, just replace */
+            *it = location;
+         } else {
+            /* inexact size, shrink hole */
+            *it += dwords;
+            /* and insert new attribute before it */
+            type_data->order->insert(it, location);
+
+            /* Insert shrunk hole in a spot so that the order of attributes
+             * is preserved.
+             */
+            std::list<int> &hole_list = type_data->holes[-*it];
+            std::list<int>::iterator insert_before = hole_list.end();
+
+            for (std::list<int>::iterator it2 = hole_list.begin();
+                                          it2 != hole_list.end();
+                                          ++it2) {
+               if ((*it2) >= (int)location) {
+                  insert_before = it2;
+                  break;
+               }
+            }
+
+            hole_list.insert(insert_before, location);
+         }
+
+         inserted_back = true;
+         break;
+      }
+
+      assert(inserted_back);
+   }
+}
+
 /* Mesh URB Entry consists of an initial section
  *
  *  - Primitive Count
@@ -440,8 +649,8 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
 {
    memset(map, 0, sizeof(*map));
 
-   for (int i = 0; i < VARYING_SLOT_MAX; i++)
-      map->start_dw[i] = -1;
+   memset(&map->start_dw[0], -1, sizeof(map->start_dw));
+   memset(&map->len_dw[0], 0, sizeof(map->len_dw));
 
    unsigned vertices_per_primitive =
       num_mesh_vertices_per_primitive(nir->info.mesh.primitive_type);
@@ -450,16 +659,6 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
    map->max_vertices = nir->info.mesh.max_vertices_out;
 
    uint64_t outputs_written = nir->info.outputs_written;
-
-   /* Assign initial section. */
-   if (BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_COUNT) & outputs_written) {
-      map->start_dw[VARYING_SLOT_PRIMITIVE_COUNT] = 0;
-      outputs_written &= ~BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_COUNT);
-   }
-   if (BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_INDICES) & outputs_written) {
-      map->start_dw[VARYING_SLOT_PRIMITIVE_INDICES] = 1;
-      outputs_written &= ~BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_INDICES);
-   }
 
    /* One dword for primitives count then K extra dwords for each primitive. */
    switch (index_format) {
@@ -476,86 +675,181 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
    map->per_primitive_start_dw = ALIGN(map->per_primitive_indices_dw *
                                        map->max_primitives + 1, 8);
 
-   /* TODO(mesh): Multiview. */
-   map->per_primitive_header_size_dw =
-         (nir->info.outputs_written & (BITFIELD64_BIT(VARYING_SLOT_VIEWPORT) |
-                                       BITFIELD64_BIT(VARYING_SLOT_CULL_PRIMITIVE) |
-                                       BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE) |
-                                       BITFIELD64_BIT(VARYING_SLOT_LAYER))) ? 8 : 0;
+   /* Assign initial section. */
+   if (BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_COUNT) & outputs_written) {
+      map->start_dw[VARYING_SLOT_PRIMITIVE_COUNT] = 0;
+      map->len_dw[VARYING_SLOT_PRIMITIVE_COUNT] = 1;
+      outputs_written &= ~BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_COUNT);
+   }
+   if (BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_INDICES) & outputs_written) {
+      map->start_dw[VARYING_SLOT_PRIMITIVE_INDICES] = 1;
+      map->len_dw[VARYING_SLOT_PRIMITIVE_INDICES] =
+            map->per_primitive_indices_dw * map->max_primitives;
+      outputs_written &= ~BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_INDICES);
+   }
 
-   map->per_primitive_data_size_dw = 0;
-   u_foreach_bit64(location, outputs_written & nir->info.per_primitive_outputs) {
-      assert(map->start_dw[location] == -1);
+   const uint64_t per_primitive_header_bits =
+         BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE) |
+         BITFIELD64_BIT(VARYING_SLOT_LAYER) |
+         BITFIELD64_BIT(VARYING_SLOT_VIEWPORT) |
+         BITFIELD64_BIT(VARYING_SLOT_CULL_PRIMITIVE);
 
-      unsigned start;
-      switch (location) {
-      case VARYING_SLOT_PRIMITIVE_SHADING_RATE:
-         start = map->per_primitive_start_dw + 0;
-         break;
-      case VARYING_SLOT_LAYER:
-         start = map->per_primitive_start_dw + 1; /* RTAIndex */
-         break;
-      case VARYING_SLOT_VIEWPORT:
-         start = map->per_primitive_start_dw + 2;
-         break;
-      case VARYING_SLOT_CULL_PRIMITIVE:
-         start = map->per_primitive_start_dw + 3;
-         break;
-      default:
-         assert(location == VARYING_SLOT_PRIMITIVE_ID ||
-                location >= VARYING_SLOT_VAR0);
-         start = map->per_primitive_start_dw +
-                 map->per_primitive_header_size_dw +
-                 map->per_primitive_data_size_dw;
-         map->per_primitive_data_size_dw += 4;
-         break;
+   const uint64_t per_vertex_header_bits =
+         BITFIELD64_BIT(VARYING_SLOT_PSIZ) |
+         BITFIELD64_BIT(VARYING_SLOT_POS) |
+         BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST0) |
+         BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST1);
+
+   std::list<int> orders[3];
+   uint64_t regular_outputs = outputs_written &
+         ~(per_primitive_header_bits | per_vertex_header_bits);
+   brw_compute_mue_layout(orders, regular_outputs, nir);
+
+   if (outputs_written & per_primitive_header_bits) {
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE)) {
+         map->start_dw[VARYING_SLOT_PRIMITIVE_SHADING_RATE] =
+               map->per_primitive_start_dw + 0;
+         map->len_dw[VARYING_SLOT_PRIMITIVE_SHADING_RATE] = 1;
       }
 
-      map->start_dw[location] = start;
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_LAYER)) {
+         map->start_dw[VARYING_SLOT_LAYER] =
+               map->per_primitive_start_dw + 1; /* RTAIndex */
+         map->len_dw[VARYING_SLOT_LAYER] = 1;
+      }
+
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_VIEWPORT)) {
+         map->start_dw[VARYING_SLOT_VIEWPORT] =
+               map->per_primitive_start_dw + 2;
+         map->len_dw[VARYING_SLOT_VIEWPORT] = 1;
+      }
+
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_CULL_PRIMITIVE)) {
+         map->start_dw[VARYING_SLOT_CULL_PRIMITIVE] =
+               map->per_primitive_start_dw + 3;
+         map->len_dw[VARYING_SLOT_CULL_PRIMITIVE] = 1;
+      }
+
+      map->per_primitive_header_size_dw = 8;
+      outputs_written &= ~per_primitive_header_bits;
+   } else {
+      map->per_primitive_header_size_dw = 0;
+   }
+
+   map->per_primitive_data_size_dw = 0;
+
+   unsigned start_dw = map->per_primitive_start_dw +
+                       map->per_primitive_header_size_dw;
+   for (std::list<int>::const_iterator it = orders[PRIM].cbegin();
+                                       it != orders[PRIM].cend();
+                                       ++it) {
+      int location = *it;
+      if (location < 0) {
+         start_dw += -location;
+         map->per_primitive_data_size_dw += -location;
+         continue;
+      }
+
+      assert(map->start_dw[location] == -1);
+
+      assert(location == VARYING_SLOT_PRIMITIVE_ID ||
+             location >= VARYING_SLOT_VAR0);
+
+      unsigned dwords, slots;
+
+      /* At this point there are both complete and split variables as
+       * outputs. We need the complete variable to compute the required
+       * size.
+       */
+      nir_variable *var =
+            brw_nir_find_complete_variable_with_location(nir,
+                                                         nir_var_shader_out,
+                                                         location);
+      brw_mue_assign_position(nir, var, map, start_dw, &dwords, &slots);
+
+      start_dw += dwords;
+      map->per_primitive_data_size_dw += dwords;
+      outputs_written &= ~BITFIELD64_RANGE(location, slots);
    }
 
    map->per_primitive_pitch_dw = ALIGN(map->per_primitive_header_size_dw +
                                        map->per_primitive_data_size_dw, 8);
 
    map->per_vertex_start_dw = ALIGN(map->per_primitive_start_dw +
-                                    map->per_primitive_pitch_dw * map->max_primitives, 8);
+                                    map->per_primitive_pitch_dw *
+                                    map->max_primitives, 8);
 
    /* TODO(mesh): Multiview. */
    unsigned fixed_header_size = 8;
    map->per_vertex_header_size_dw = ALIGN(fixed_header_size +
                                           nir->info.clip_distance_array_size +
                                           nir->info.cull_distance_array_size, 8);
-   map->per_vertex_data_size_dw = 0;
-   u_foreach_bit64(location, outputs_written & ~nir->info.per_primitive_outputs) {
-      assert(map->start_dw[location] == -1);
 
-      unsigned start;
-      switch (location) {
-      case VARYING_SLOT_PSIZ:
-         start = map->per_vertex_start_dw + 3;
-         break;
-      case VARYING_SLOT_POS:
-         start = map->per_vertex_start_dw + 4;
-         break;
-      case VARYING_SLOT_CLIP_DIST0:
-         start = map->per_vertex_start_dw + fixed_header_size + 0;
-         break;
-      case VARYING_SLOT_CLIP_DIST1:
-         start = map->per_vertex_start_dw + fixed_header_size + 4;
-         break;
-      case VARYING_SLOT_CULL_DIST0:
-      case VARYING_SLOT_CULL_DIST1:
-         unreachable("cull distances should be lowered earlier");
-         break;
-      default:
-         assert(location >= VARYING_SLOT_VAR0);
-         start = map->per_vertex_start_dw +
-                 map->per_vertex_header_size_dw +
-                 map->per_vertex_data_size_dw;
-         map->per_vertex_data_size_dw += 4;
-         break;
+   if (outputs_written & per_vertex_header_bits) {
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_PSIZ)) {
+         map->start_dw[VARYING_SLOT_PSIZ] = map->per_vertex_start_dw + 3;
+         map->len_dw[VARYING_SLOT_PSIZ] = 1;
       }
-      map->start_dw[location] = start;
+
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_POS)) {
+         map->start_dw[VARYING_SLOT_POS] = map->per_vertex_start_dw + 4;
+         map->len_dw[VARYING_SLOT_POS] = 4;
+      }
+
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST0)) {
+         map->start_dw[VARYING_SLOT_CLIP_DIST0] =
+               map->per_vertex_start_dw + fixed_header_size + 0;
+         map->len_dw[VARYING_SLOT_CLIP_DIST0] = 4;
+      }
+
+      if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST1)) {
+         map->start_dw[VARYING_SLOT_CLIP_DIST1] =
+               map->per_vertex_start_dw + fixed_header_size + 4;
+         map->len_dw[VARYING_SLOT_CLIP_DIST1] = 4;
+      }
+
+      outputs_written &= ~per_vertex_header_bits;
+   }
+
+   /* cull distances should be lowered earlier */
+   assert(!(outputs_written & BITFIELD64_BIT(VARYING_SLOT_CULL_DIST0)));
+   assert(!(outputs_written & BITFIELD64_BIT(VARYING_SLOT_CULL_DIST1)));
+
+   map->per_vertex_data_size_dw = 0;
+
+   start_dw = map->per_vertex_start_dw +
+              map->per_vertex_header_size_dw;
+   for (unsigned type = VERT; type <= VERT_FLAT; ++type) {
+      for (std::list<int>::const_iterator it = orders[type].cbegin();
+                                          it != orders[type].cend();
+                                          ++it) {
+         int location = *it;
+         if (location < 0) {
+            start_dw += -location;
+            map->per_vertex_data_size_dw += -location;
+            continue;
+         }
+
+         assert(map->start_dw[location] == -1);
+
+         assert(location >= VARYING_SLOT_VAR0);
+
+         unsigned dwords, slots;
+
+         /* At this point there are both complete and split variables as
+          * outputs. We need the complete variable to compute the required
+          * size.
+          */
+         nir_variable *var =
+               brw_nir_find_complete_variable_with_location(nir,
+                                                            nir_var_shader_out,
+                                                            location);
+         brw_mue_assign_position(nir, var, map, start_dw, &dwords, &slots);
+
+         start_dw += dwords;
+         map->per_vertex_data_size_dw += dwords;
+         outputs_written &= ~BITFIELD64_RANGE(location, slots);
+      }
    }
 
    map->per_vertex_pitch_dw = ALIGN(map->per_vertex_header_size_dw +
@@ -568,14 +862,18 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
 }
 
 static void
-brw_print_mue_map(FILE *fp, const struct brw_mue_map *map)
+brw_print_mue_map(FILE *fp, const struct brw_mue_map *map, struct nir_shader *nir)
 {
    fprintf(fp, "MUE map (%d dwords, %d primitives, %d vertices)\n",
            map->size_dw, map->max_primitives, map->max_vertices);
-   fprintf(fp, "  %4d: VARYING_SLOT_PRIMITIVE_COUNT\n",
-           map->start_dw[VARYING_SLOT_PRIMITIVE_COUNT]);
-   fprintf(fp, "  %4d: VARYING_SLOT_PRIMITIVE_INDICES\n",
-           map->start_dw[VARYING_SLOT_PRIMITIVE_INDICES]);
+   fprintf(fp, "  <%4d, %4d>: VARYING_SLOT_PRIMITIVE_COUNT\n",
+           map->start_dw[VARYING_SLOT_PRIMITIVE_COUNT],
+           map->start_dw[VARYING_SLOT_PRIMITIVE_COUNT] +
+           map->len_dw[VARYING_SLOT_PRIMITIVE_COUNT] - 1);
+   fprintf(fp, "  <%4d, %4d>: VARYING_SLOT_PRIMITIVE_INDICES\n",
+           map->start_dw[VARYING_SLOT_PRIMITIVE_INDICES],
+           map->start_dw[VARYING_SLOT_PRIMITIVE_INDICES] +
+           map->len_dw[VARYING_SLOT_PRIMITIVE_INDICES] - 1);
 
    fprintf(fp, "  ----- per primitive (start %d, header_size %d, data_size %d, pitch %d)\n",
            map->per_primitive_start_dw,
@@ -586,13 +884,20 @@ brw_print_mue_map(FILE *fp, const struct brw_mue_map *map)
    for (unsigned i = 0; i < VARYING_SLOT_MAX; i++) {
       if (map->start_dw[i] < 0)
          continue;
+
       const unsigned offset = map->start_dw[i];
-      if (offset >= map->per_primitive_start_dw &&
-          offset < map->per_primitive_start_dw + map->per_primitive_pitch_dw) {
-         fprintf(fp, "  %4d: %s\n", offset,
-                 gl_varying_slot_name_for_stage((gl_varying_slot)i,
-                                                MESA_SHADER_MESH));
-      }
+      const unsigned len = map->len_dw[i];
+
+      if (offset < map->per_primitive_start_dw ||
+          offset >= map->per_primitive_start_dw + map->per_primitive_pitch_dw)
+         continue;
+
+      const char *name =
+            gl_varying_slot_name_for_stage((gl_varying_slot)i,
+                                           MESA_SHADER_MESH);
+
+      fprintf(fp, "  <%4d, %4d>: %s (%d)\n", offset, offset + len - 1,
+              name, i);
    }
 
    fprintf(fp, "  ----- per vertex (start %d, header_size %d, data_size %d, pitch %d)\n",
@@ -604,13 +909,24 @@ brw_print_mue_map(FILE *fp, const struct brw_mue_map *map)
    for (unsigned i = 0; i < VARYING_SLOT_MAX; i++) {
       if (map->start_dw[i] < 0)
          continue;
+
       const unsigned offset = map->start_dw[i];
-      if (offset >= map->per_vertex_start_dw &&
-          offset < map->per_vertex_start_dw + map->per_vertex_pitch_dw) {
-         fprintf(fp, "  %4d: %s\n", offset,
-                 gl_varying_slot_name_for_stage((gl_varying_slot)i,
-                                                MESA_SHADER_MESH));
-      }
+      const unsigned len = map->len_dw[i];
+
+      if (offset < map->per_vertex_start_dw ||
+          offset >= map->per_vertex_start_dw + map->per_vertex_pitch_dw)
+         continue;
+
+      nir_variable *var =
+            nir_find_variable_with_location(nir, nir_var_shader_out, i);
+      bool flat = var->data.interpolation == INTERP_MODE_FLAT;
+
+      const char *name =
+            gl_varying_slot_name_for_stage((gl_varying_slot)i,
+                                           MESA_SHADER_MESH);
+
+      fprintf(fp, "  <%4d, %4d>: %s (%d)%s\n", offset, offset + len - 1,
+              name, i, flat ? " (flat)" : "");
    }
 
    fprintf(fp, "\n");
@@ -1070,7 +1386,7 @@ brw_compile_mesh(const struct brw_compiler *compiler,
          brw_print_tue_map(stderr, params->tue_map);
       }
       fprintf(stderr, "Mesh Output ");
-      brw_print_mue_map(stderr, &prog_data->map);
+      brw_print_mue_map(stderr, &prog_data->map, nir);
    }
 
    fs_generator g(compiler, params->log_data, mem_ctx,

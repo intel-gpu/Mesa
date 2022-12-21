@@ -2103,3 +2103,18 @@ brw_nir_pulls_at_sample(nir_shader *shader)
 
    return false;
 }
+
+const struct glsl_type *
+brw_nir_get_var_type(const struct nir_shader *nir, nir_variable *var)
+{
+   const struct glsl_type *type = var->interface_type;
+   if (!type) {
+      type = var->type;
+      if (nir_is_arrayed_io(var, nir->info.stage) || var->data.per_view) {
+         assert(glsl_type_is_array(type));
+         type = glsl_get_array_element(type);
+      }
+   }
+
+   return type;
+}
