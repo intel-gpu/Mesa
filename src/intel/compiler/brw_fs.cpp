@@ -1794,7 +1794,7 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
                                                 VARYING_BIT_PRIMITIVE_SHADING_RATE;
          bool reads_header = (per_prim_inputs_read & primitive_header_bits) != 0;
 
-         if (reads_header) {
+         if (reads_header || mue_map->user_data_in_primitive_header) {
             /* Primitive Shading Rate, Layer and Viewport live in the same
              * 4-dwords slot (psr is dword 0, layer is dword 1, and viewport
              * is dword 2).
@@ -1859,7 +1859,8 @@ calculate_urb_setup(const struct intel_device_info *devinfo,
       unsigned per_vertex_user_start_dw = urb_next * 4;
 
       unsigned base = mue_map->per_vertex_start_dw;
-      base += mue_map->per_vertex_header_size_dw;
+      if (!mue_map->user_data_in_vertex_header)
+         base += mue_map->per_vertex_header_size_dw;
       base -= per_vertex_user_start_dw;
 
       u_foreach_bit64(i, unique_fs_attrs) {
