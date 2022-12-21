@@ -483,7 +483,7 @@ struct attr_type_info {
    std::list<int> *order;
 
    /* attributes after which there's hole of size equal to array index */
-   std::list<int> holes[4];
+   std::list<int> holes[5];
 };
 
 /* Finds order of outputs which require minimum size, without splitting
@@ -492,15 +492,42 @@ struct attr_type_info {
 static void
 brw_compute_mue_layout(std::list<int> *orders,
                        uint64_t outputs_written,
-                       struct nir_shader *nir)
+                       struct nir_shader *nir,
+                       bool *pack_prim_data_into_header,
+                       bool *pack_vert_data_into_header)
 {
    const struct shader_info *info = &nir->info;
 
    struct attr_type_info data[3];
    bool no_compact = !debug_get_bool_option("BRW_MESH_COMPACTION", true);
+   unsigned header_packing = (unsigned)debug_get_num_option("BRW_MESH_HEADER_PACKING", 3);
+
+   if ((header_packing & 1) == 0)
+      *pack_prim_data_into_header = false;
+   if ((header_packing & 2) == 0)
+      *pack_vert_data_into_header = false;
 
    for (unsigned i = PRIM; i <= VERT_FLAT; ++i)
       data[i].order = &orders[i];
+
+   /* If packing into header is enabled, add a hole of size 4 and add
+    * a virtual location to keep the algorithm happy (it expects holes
+    * to be preceded by some location). We'll remove those virtual
+    * locations at the end.
+    */
+   const gl_varying_slot virtual_header_location = VARYING_SLOT_POS;
+   assert((outputs_written & BITFIELD64_BIT(virtual_header_location)) == 0);
+   if (*pack_prim_data_into_header) {
+      orders[PRIM].push_back(virtual_header_location);
+      orders[PRIM].push_back(-4);
+      data[PRIM].holes[4].push_back(virtual_header_location);
+   }
+
+   if (*pack_vert_data_into_header) {
+      orders[VERT].push_back(virtual_header_location);
+      orders[VERT].push_back(-4);
+      data[VERT].holes[4].push_back(virtual_header_location);
+   }
 
    u_foreach_bit64(location, outputs_written) {
       if ((BITFIELD64_BIT(location) & outputs_written) == 0)
@@ -524,6 +551,19 @@ brw_compute_mue_layout(std::list<int> *orders,
          type_data = &data[VERT];
 
       outputs_written &= ~BITFIELD64_RANGE(location, slots);
+
+      /* special case to use hole of size 4 */
+      if (dwords == 4 && !type_data->holes[4].empty()) {
+         type_data->holes[4].pop_back();
+
+         assert(type_data->order->front() == virtual_header_location);
+         type_data->order->pop_front();
+
+         assert(type_data->order->front() == -4);
+         type_data->order->front() = location;
+
+         continue;
+      }
 
       int mod = dwords % 4;
       if (mod == 0) {
@@ -549,7 +589,7 @@ brw_compute_mue_layout(std::list<int> *orders,
 
       unsigned found = 0;
       /* try to find the smallest hole big enough to hold this attribute */
-      for (unsigned sz = dwords; sz < 4; sz++){
+      for (unsigned sz = dwords; sz <= 4; sz++){
          if (!type_data->holes[sz].empty()) {
             found = sz;
             break;
@@ -566,7 +606,7 @@ brw_compute_mue_layout(std::list<int> *orders,
          continue;
       }
 
-      assert(found < 4);
+      assert(found <= 4);
       assert(!type_data->holes[found].empty());
       int after_loc = type_data->holes[found].back();
       type_data->holes[found].pop_back();
@@ -617,6 +657,46 @@ brw_compute_mue_layout(std::list<int> *orders,
       }
 
       assert(inserted_back);
+   }
+
+   if (*pack_prim_data_into_header) {
+      if (orders[PRIM].front() == virtual_header_location)
+         orders[PRIM].pop_front();
+
+      if (!data[PRIM].holes[4].empty()) {
+         *pack_prim_data_into_header = false;
+
+         assert(orders[PRIM].front() == -4);
+         orders[PRIM].pop_front();
+      }
+   }
+
+   if (*pack_vert_data_into_header) {
+      if (orders[VERT].front() == virtual_header_location)
+         orders[VERT].pop_front();
+
+      if (!data[VERT].holes[4].empty()) {
+         *pack_vert_data_into_header = false;
+
+         assert(orders[VERT].front() == -4);
+         orders[VERT].pop_front();
+      }
+   }
+
+
+   if (INTEL_DEBUG(DEBUG_MESH)) {
+      fprintf(stderr, "MUE attribute order:\n");
+      for (unsigned i = PRIM; i <= VERT_FLAT; ++i) {
+         if (!orders[i].empty())
+            fprintf(stderr, "%d: ", i);
+         for (std::list<int>::const_iterator it = orders[i].cbegin();
+                                             it != orders[i].cend();
+                                             ++it) {
+            fprintf(stderr, "%d ", *it);
+         }
+         if (!orders[i].empty())
+            fprintf(stderr, "\n");
+      }
    }
 }
 
@@ -703,7 +783,22 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
    std::list<int> orders[3];
    uint64_t regular_outputs = outputs_written &
          ~(per_primitive_header_bits | per_vertex_header_bits);
-   brw_compute_mue_layout(orders, regular_outputs, nir);
+
+   /* packing into prim header is possible only if prim header is present */
+   map->user_data_in_primitive_header =
+         (outputs_written & per_primitive_header_bits) != 0;
+
+   /* Packing into vert header is always possible, but we allow it only
+    * if full vec4 is available (so point size is not used) and there's
+    * nothing between it and normal vertex data (so no clip distances).
+    */
+   map->user_data_in_vertex_header =
+         (outputs_written & per_vertex_header_bits) ==
+               BITFIELD64_BIT(VARYING_SLOT_POS);
+
+   brw_compute_mue_layout(orders, regular_outputs, nir,
+                          &map->user_data_in_primitive_header,
+                          &map->user_data_in_vertex_header);
 
    if (outputs_written & per_primitive_header_bits) {
       if (outputs_written & BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE)) {
@@ -738,15 +833,24 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
 
    map->per_primitive_data_size_dw = 0;
 
-   unsigned start_dw = map->per_primitive_start_dw +
-                       map->per_primitive_header_size_dw;
+   unsigned start_dw = map->per_primitive_start_dw;
+   if (map->user_data_in_primitive_header)
+      start_dw += 4; /* first 4 dwords are used */
+   else
+      start_dw += map->per_primitive_header_size_dw;
+   unsigned header_used_dw = 0;
+
    for (std::list<int>::const_iterator it = orders[PRIM].cbegin();
                                        it != orders[PRIM].cend();
                                        ++it) {
       int location = *it;
       if (location < 0) {
          start_dw += -location;
-         map->per_primitive_data_size_dw += -location;
+         if (map->user_data_in_primitive_header && header_used_dw < 4)
+            header_used_dw += -location;
+         else
+            map->per_primitive_data_size_dw += -location;
+         assert(header_used_dw <= 4);
          continue;
       }
 
@@ -768,7 +872,11 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
       brw_mue_assign_position(nir, var, map, start_dw, &dwords, &slots);
 
       start_dw += dwords;
-      map->per_primitive_data_size_dw += dwords;
+      if (map->user_data_in_primitive_header && header_used_dw < 4)
+         header_used_dw += dwords;
+      else
+         map->per_primitive_data_size_dw += dwords;
+      assert(header_used_dw <= 4);
       outputs_written &= ~BITFIELD64_RANGE(location, slots);
    }
 
@@ -817,8 +925,11 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
 
    map->per_vertex_data_size_dw = 0;
 
-   start_dw = map->per_vertex_start_dw +
-              map->per_vertex_header_size_dw;
+   start_dw = map->per_vertex_start_dw;
+   if (!map->user_data_in_vertex_header)
+      start_dw += map->per_vertex_header_size_dw;
+
+   header_used_dw = 0;
    for (unsigned type = VERT; type <= VERT_FLAT; ++type) {
       for (std::list<int>::const_iterator it = orders[type].cbegin();
                                           it != orders[type].cend();
@@ -826,7 +937,14 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
          int location = *it;
          if (location < 0) {
             start_dw += -location;
-            map->per_vertex_data_size_dw += -location;
+            if (map->user_data_in_vertex_header && header_used_dw < 4) {
+               header_used_dw += -location;
+               assert(header_used_dw <= 4);
+               if (header_used_dw == 4)
+                  start_dw += 4; /* jump over gl_position */
+            } else {
+               map->per_vertex_data_size_dw += -location;
+            }
             continue;
          }
 
@@ -847,7 +965,14 @@ brw_compute_mue_map(struct nir_shader *nir, struct brw_mue_map *map,
          brw_mue_assign_position(nir, var, map, start_dw, &dwords, &slots);
 
          start_dw += dwords;
-         map->per_vertex_data_size_dw += dwords;
+         if (map->user_data_in_vertex_header && header_used_dw < 4) {
+            header_used_dw += dwords;
+            assert(header_used_dw <= 4);
+            if (header_used_dw == 4)
+               start_dw += 4; /* jump over gl_position */
+         } else {
+            map->per_vertex_data_size_dw += dwords;
+         }
          outputs_written &= ~BITFIELD64_RANGE(location, slots);
       }
    }
