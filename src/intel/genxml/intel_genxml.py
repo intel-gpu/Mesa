@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections import OrderedDict
 import copy
 import pathlib
+import os.path
 import re
 import xml.etree.ElementTree as et
 import typing
@@ -83,6 +84,7 @@ class Struct(object):
 # ordering of the various tag attributes
 GENXML_DESC = {
     'genxml'      : [ 'name', 'gen', ],
+    'import'      : [ 'name', ],
     'enum'        : [ 'name', 'value', 'prefix', ],
     'struct'      : [ 'name', 'length', ],
     'field'       : [ 'name', 'start', 'end', 'type', 'default', 'prefix', 'nonzero' ],
@@ -128,6 +130,9 @@ def process_attribs(elem: et.Element) -> None:
 
 def sort_xml(xml: et.ElementTree) -> None:
     genxml = xml.getroot()
+
+    imports = xml.findall('import')
+
     enums = sorted(xml.findall('enum'), key=get_name)
     enum_dict: typing.Dict[str, et.Element] = {}
     for e in enums:
@@ -160,15 +165,61 @@ def sort_xml(xml: et.ElementTree) -> None:
     for r in registers:
         r[:] = sorted(r, key=get_start)
 
-    new_elems = enums + list(sorted_structs.values()) + instructions + registers
+    new_elems = (imports + enums + list(sorted_structs.values()) +
+                 instructions + registers)
     for n in new_elems:
         process_attribs(n)
     genxml[:] = new_elems
 
 
 class GenXml(object):
-    def __init__(self, filename):
-        self.et = et.parse(filename)
+    def __init__(self, filename, import_xml=False, files=None):
+        if files is not None:
+            self.files = files
+        else:
+            self.files = set()
+        self.filename = os.path.realpath(filename)
+        assert self.filename not in self.files
+        self.files.add(self.filename)
+        self.et = et.parse(self.filename)
+        if import_xml:
+            self.merge_imported()
+
+    def merge_imported(self):
+        orig_elements = set(self.et.getroot())
+        name_and_obj = lambda i: (get_name(i), i)
+        filter_ty = lambda s: filter(lambda i: i.tag == s, orig_elements)
+        filter_ty_item = lambda s: dict(map(name_and_obj, filter_ty(s)))
+        orig_by_tag = {
+            'struct': filter_ty_item('struct'),
+            'instruction': filter_ty_item('instruction'),
+            'register': filter_ty_item('register'),
+        }
+        for item in orig_elements:
+            if item.tag == 'import':
+                assert 'name' in item.attrib
+                filename = os.path.split(item.attrib['name'])
+                # We should be careful to restrict loaded files to
+                # those under the source or build trees. For now, only
+                # allow siblings of the current xml file.
+                assert filename[0] == '', 'Directories not allowed with import'
+                filename = os.path.join(os.path.dirname(self.filename),
+                                        filename[1])
+                assert os.path.exists(filename), f'{self.filename} {filename}'
+                genxml = GenXml(filename, import_xml=True, files=self.files)
+                imported_elements = set(genxml.et.getroot())
+                to_add = set()
+                for i in imported_elements:
+                    if i.tag not in orig_by_tag:
+                        continue
+                    if i.attrib['name'] in orig_by_tag[i.tag]:
+                        # When merging we ignore items that are
+                        # present in the original genxml.
+                        continue
+                    to_add.add(i)
+                if len(to_add) > 0:
+                    self.et.getroot().extend(list(to_add))
+                    sort_xml(self.et)
 
     def filter_engines(self, engines):
         changed = False
