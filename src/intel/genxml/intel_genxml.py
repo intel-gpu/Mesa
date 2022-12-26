@@ -186,7 +186,8 @@ class GenXml(object):
         if import_xml:
             self.merge_imported()
 
-    def merge_imported(self):
+    def process_imported(self, merge=False, drop_dupes=False):
+        assert merge != drop_dupes
         orig_elements = set(self.et.getroot())
         name_and_obj = lambda i: (get_name(i), i)
         filter_ty = lambda s: filter(lambda i: i.tag == s, orig_elements)
@@ -215,18 +216,44 @@ class GenXml(object):
                 genxml = GenXml(filename, import_xml=True, files=self.files)
                 imported_elements = set(genxml.et.getroot())
                 to_add = set()
+                to_remove = set()
                 for i in imported_elements:
                     if (i.tag not in orig_by_tag or
                         i.attrib['name'] in exceptions):
                         continue
                     if i.attrib['name'] in orig_by_tag[i.tag]:
-                        # When merging we ignore items that are
-                        # present in the original genxml.
-                        continue
-                    to_add.add(i)
+                        if merge:
+                            # When merging we ignore items that are
+                            # present in the original genxml.
+                            continue
+                    else:
+                        if drop_dupes:
+                            # When droping duplicates we need to have
+                            # items to compare that are present in
+                            # both the original genxml and the
+                            # imported genxml.
+                            continue
+                    if merge:
+                        to_add.add(i)
+                    else:
+                        assert drop_dupes
+                        orig_element = orig_by_tag[i.tag][i.attrib['name']]
+                        if not node_validator(i, orig_element):
+                            continue
+                        to_remove.add(orig_element)
                 if len(to_add) > 0:
+                    assert len(to_remove) == 0
                     self.et.getroot().extend(list(to_add))
                     sort_xml(self.et)
+                elif len(to_remove) > 0:
+                    self.et.getroot()[:] = list(orig_elements - to_remove)
+                    sort_xml(self.et)
+
+    def merge_imported(self):
+        self.process_imported(merge=True)
+
+    def optimize_xml_import(self):
+        self.process_imported(drop_dupes=True)
 
     def filter_engines(self, engines):
         changed = False
