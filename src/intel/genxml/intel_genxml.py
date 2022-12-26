@@ -85,6 +85,7 @@ class Struct(object):
 GENXML_DESC = {
     'genxml'      : [ 'name', 'gen', ],
     'import'      : [ 'name', ],
+    'exclude'     : [ 'name', ],
     'enum'        : [ 'name', 'value', 'prefix', ],
     'struct'      : [ 'name', 'length', ],
     'field'       : [ 'name', 'start', 'end', 'type', 'default', 'prefix', 'nonzero' ],
@@ -200,6 +201,10 @@ class GenXml(object):
             if item.tag == 'import':
                 assert 'name' in item.attrib
                 filename = os.path.split(item.attrib['name'])
+                exceptions = set()
+                for e in item:
+                    assert e.tag == 'exclude'
+                    exceptions.add(e.attrib['name'])
                 # We should be careful to restrict loaded files to
                 # those under the source or build trees. For now, only
                 # allow siblings of the current xml file.
@@ -211,7 +216,8 @@ class GenXml(object):
                 imported_elements = set(genxml.et.getroot())
                 to_add = set()
                 for i in imported_elements:
-                    if i.tag not in orig_by_tag:
+                    if (i.tag not in orig_by_tag or
+                        i.attrib['name'] in exceptions):
                         continue
                     if i.attrib['name'] in orig_by_tag[i.tag]:
                         # When merging we ignore items that are
