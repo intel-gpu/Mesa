@@ -136,12 +136,26 @@ iris_init_non_engine_contexts(struct iris_context *ice)
    iris_foreach_batch(ice, batch) {
       batch->i915.ctx_id = iris_create_hw_context(screen->bufmgr, ice->protected);
       batch->i915.exec_flags = I915_EXEC_RENDER;
+      batch->engine_class = INTEL_ENGINE_CLASS_INVALID;
       assert(batch->i915.ctx_id);
       context_set_priority(screen->bufmgr, batch->i915.ctx_id, ice->priority);
    }
 
    ice->batches[IRIS_BATCH_BLITTER].i915.exec_flags = I915_EXEC_BLT;
    ice->has_engines_context = false;
+}
+
+static void
+iris_get_batch_engine_classes(struct iris_screen *screen,
+                              enum intel_engine_class engine_classes[IRIS_BATCH_COUNT])
+{
+   STATIC_ASSERT(IRIS_BATCH_COUNT == 3);
+   engine_classes[IRIS_BATCH_RENDER] = INTEL_ENGINE_CLASS_RENDER;
+   engine_classes[IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_RENDER;
+   engine_classes[IRIS_BATCH_BLITTER] = INTEL_ENGINE_CLASS_COPY;
+
+   if (iris_bufmgr_compute_engine_supported(screen->bufmgr))
+      engine_classes[IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_COMPUTE;
 }
 
 static int
@@ -162,18 +176,11 @@ iris_create_engines_context(struct iris_context *ice)
       return -1;
    }
 
-   STATIC_ASSERT(IRIS_BATCH_COUNT == 3);
-   enum intel_engine_class engine_classes[IRIS_BATCH_COUNT] = {
-      [IRIS_BATCH_RENDER] = INTEL_ENGINE_CLASS_RENDER,
-      [IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_RENDER,
-      [IRIS_BATCH_BLITTER] = INTEL_ENGINE_CLASS_COPY,
-   };
+   enum intel_engine_class engine_classes[IRIS_BATCH_COUNT];
+   iris_get_batch_engine_classes(screen, engine_classes);
 
    /* Blitter is only supported on Gfx12+ */
    unsigned num_batches = IRIS_BATCH_COUNT - (devinfo->ver >= 12 ? 0 : 1);
-
-   if (iris_bufmgr_compute_engine_supported(screen->bufmgr))
-      engine_classes[IRIS_BATCH_COMPUTE] = INTEL_ENGINE_CLASS_COMPUTE;
 
    enum intel_gem_create_context_flags flags = 0;
    if (ice->protected) {
@@ -206,14 +213,24 @@ iris_create_engines_context(struct iris_context *ice)
 static bool
 iris_init_engines_context(struct iris_context *ice)
 {
+   struct iris_screen *screen = (void *) ice->ctx.screen;
+
    int engines_ctx = iris_create_engines_context(ice);
    if (engines_ctx < 0)
       return false;
+
+   struct intel_query_engine_info *engines_info;
+   engines_info = intel_engine_get_info(iris_bufmgr_get_fd(screen->bufmgr),
+                                        screen->devinfo->kmd_type);
+   assert(engines_info != NULL);
+   enum intel_engine_class engine_classes[IRIS_BATCH_COUNT];
+   iris_get_batch_engine_classes(screen, engine_classes);
 
    iris_foreach_batch(ice, batch) {
       unsigned i = batch - &ice->batches[0];
       batch->i915.ctx_id = engines_ctx;
       batch->i915.exec_flags = i;
+      batch->engine_class = engine_classes[i];
    }
 
    ice->has_engines_context = true;
