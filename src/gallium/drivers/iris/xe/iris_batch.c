@@ -145,6 +145,7 @@ void iris_xe_init_batches(struct iris_context *ice)
 
       ret = iris_xe_init_batch(bufmgr, engines_info, engine_classes[name],
                                ice->priority, &batch->xe.exec_queue_id);
+      batch->engine_class = engine_classes[name];
       assert(ret);
    }
 
