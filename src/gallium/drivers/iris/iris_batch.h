@@ -105,6 +105,7 @@ struct iris_batch {
          uint32_t exec_queue_id;
       } xe;
    };
+   enum intel_engine_class engine_class;
 
    /** A list of all BOs referenced by this batch */
    struct iris_bo **exec_bos;
