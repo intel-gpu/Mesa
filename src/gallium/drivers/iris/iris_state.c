@@ -1385,6 +1385,14 @@ iris_init_render_context(struct iris_batch *batch)
    };
 #endif
 
+#if GFX_VER >= 20
+   /* Wa_14014226147 */
+   iris_emit_cmd(batch, GENX(3DSTATE_3D_MODE), p) {
+      p.DX10OGLBorderModeforYCRCB = true;
+      p.DX10OGLBorderModeforYCRCBMask = true;
+   }
+#endif
+
    upload_pixel_hashing_tables(batch);
 
    /* 3DSTATE_DRAWING_RECTANGLE is non-pipelined, so we want to avoid
