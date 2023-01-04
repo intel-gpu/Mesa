@@ -5096,6 +5096,14 @@ iris_store_tes_state(const struct intel_device_info *devinfo,
 
    iris_pack_command(GENX(3DSTATE_TE), te_state, te) {
       te.Partitioning = tes_data->partitioning;
+#if GFX_VER >= 20
+      /* Wa_14015504893:
+       *
+       * Set number of regions per patch to recommended value for
+       * tessellation redistribution.
+       */
+      te.NumberOfRegionsPerPatch = 2;
+#endif
       te.OutputTopology = tes_data->output_topology;
       te.TEDomain = tes_data->domain;
       te.TEEnable = true;

@@ -1457,6 +1457,15 @@ emit_3dstate_te(struct anv_graphics_pipeline *pipeline)
          /* 1K_TRIANGLES */
          te.LocalBOPAccumulatorThreshold = 1;
 #endif
+
+#if GFX_VER >= 20
+         /* Wa_14015504893:
+          *
+          * Set number of regions per patch to recommended value for
+          * tessellation redistribution.
+          */
+         te.NumberOfRegionsPerPatch = 2;
+#endif
       }
    }
 }
