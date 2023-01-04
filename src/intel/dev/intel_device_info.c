@@ -1217,6 +1217,7 @@ static const struct intel_device_info intel_device_info_arl_h = {
    .ver = 20,                                                   \
    .verx10 = 200,                                               \
    .num_subslices = dual_subslices(1),                          \
+   .grf_size = 64,                                              \
    .has_64bit_float = true,                                     \
    .has_64bit_int = true,                                       \
    .has_integer_dword_mul = false,                              \
