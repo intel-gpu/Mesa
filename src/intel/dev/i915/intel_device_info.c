@@ -69,10 +69,10 @@ update_from_single_slice_topology(struct intel_device_info *devinfo,
     * 4 dualsubslices.
     */
    devinfo->max_subslices_per_slice = 4;
-   devinfo->max_eus_per_subslice = 16;
+   devinfo->max_eus_per_subslice = topology->max_eus_per_subslice;
    devinfo->subslice_slice_stride = 1;
-   devinfo->eu_slice_stride = DIV_ROUND_UP(16 * 4, 8);
-   devinfo->eu_subslice_stride = DIV_ROUND_UP(16, 8);
+   devinfo->eu_subslice_stride = DIV_ROUND_UP(devinfo->max_eus_per_subslice, 8);
+   devinfo->eu_slice_stride = devinfo->max_subslices_per_slice * devinfo->eu_subslice_stride;
 
    for (uint32_t ss_idx = 0; ss_idx < topology->max_subslices; ss_idx++) {
       const uint32_t s = ss_idx / 4;
