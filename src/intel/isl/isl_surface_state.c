@@ -83,7 +83,9 @@ static const uint32_t isl_encode_multisample_layout[] = {
 static const uint32_t isl_encode_aux_mode[] = {
    [ISL_AUX_USAGE_NONE] = AUX_NONE,
    [ISL_AUX_USAGE_MC] = AUX_NONE,
+   [ISL_AUX_USAGE_MCS] = AUX_MCS,
    [ISL_AUX_USAGE_MCS_CCS] = AUX_MCS,
+   [ISL_AUX_USAGE_STC_CCS] = AUX_NONE,
 };
 #elif GFX_VER >= 12
 static const uint32_t isl_encode_aux_mode[] = {
