@@ -400,8 +400,6 @@ blorp_fast_clear(struct blorp_batch *batch,
    params.y0 = y0;
    params.x1 = x1;
    params.y1 = y1;
-
-   memset(&params.wm_inputs.clear_color, 0xff, 4*sizeof(float));
    params.fast_clear_op = ISL_AUX_OP_FAST_CLEAR;
 
    get_fast_clear_rect(batch->blorp->isl_dev, surf->surf, surf->aux_surf,
@@ -412,6 +410,23 @@ blorp_fast_clear(struct blorp_batch *batch,
 
    blorp_surface_info_init(batch, &params.dst, surf, level,
                                start_layer, format, true);
+
+   if (batch->blorp->isl_dev->info->ver >= 20)
+      /* Xe2 doesn't have clear color bo and address but expects a constant
+       * output by clearing pixel shader, so we set new clear color value in
+       * the wm_inputs.
+       */
+      memcpy(&params.wm_inputs.clear_color, &surf->clear_color,
+            4 * sizeof(float));
+   else
+      /* From the BSpec: 2423  Render Target Fast Clear:
+       *
+       *    The pixel shader kernel requires no attributes, and delivers a
+       *    value of 0xFFFFFFFF in all channels of the render target write
+       *    message The replicated color message should be used.
+       */
+      memset(&params.wm_inputs.clear_color, 0xff, 4*sizeof(float));
+
    params.num_samples = params.dst.surf.samples;
 
    assert(params.num_samples != 0);
