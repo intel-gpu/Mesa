@@ -41,6 +41,7 @@ struct iris_kmd_backend {
                           enum iris_heap heap_flags, unsigned alloc_flags);
    bool (*bo_madvise)(struct iris_bo *bo, enum iris_madvice state);
    int (*bo_set_caching)(struct iris_bo *bo, bool cached);
+   int (*gem_close)(struct iris_bufmgr *bufmgr, uint32_t handle);
    void *(*gem_mmap)(struct iris_bufmgr *bufmgr, struct iris_bo *bo);
    enum pipe_reset_status (*batch_check_for_reset)(struct iris_batch *batch);
    int (*batch_submit)(struct iris_batch *batch);

@@ -374,12 +374,22 @@ i915_gem_vm_unbind(struct iris_bo *bo)
    return true;
 }
 
+static int
+i915_gem_close(struct iris_bufmgr *bufmgr, uint32_t handle)
+{
+   struct drm_gem_close close = {
+      .handle = handle,
+   };
+   return intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_GEM_CLOSE, &close);
+}
+
 const struct iris_kmd_backend *i915_get_backend(void)
 {
    static const struct iris_kmd_backend i915_backend = {
       .gem_create = i915_gem_create,
       .bo_madvise = i915_bo_madvise,
       .bo_set_caching = i915_bo_set_caching,
+      .gem_close = i915_gem_close,
       .gem_mmap = i915_gem_mmap,
       .batch_check_for_reset = i915_batch_check_for_reset,
       .batch_submit = i915_batch_submit,
