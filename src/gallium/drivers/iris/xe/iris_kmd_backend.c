@@ -261,6 +261,24 @@ error_no_mem:
    return ret;
 }
 
+static bool
+xe_bo_madvise(struct iris_bo *bo, enum iris_madvice state)
+{
+   /* Only applicable if VM was created with DRM_XE_VM_CREATE_FAULT_MODE but
+    * that is not compatible with DRM_XE_VM_CREATE_SCRATCH_PAGE
+    *
+    * So returning as retained.
+    */
+   return true;
+}
+
+static int
+xe_bo_set_caching(struct iris_bo *bo, bool cached)
+{
+   /* Xe don't have cachin UAPI so this function should never be called */
+   return -1;
+}
+
 const struct iris_kmd_backend *xe_get_backend(void)
 {
    static const struct iris_kmd_backend xe_backend = {
@@ -271,6 +289,8 @@ const struct iris_kmd_backend *xe_get_backend(void)
       .gem_vm_unbind = xe_gem_vm_unbind,
       .batch_check_for_reset = xe_batch_check_for_reset,
       .batch_submit = xe_batch_submit,
+      .bo_madvise = xe_bo_madvise,
+      .bo_set_caching = xe_bo_set_caching,
    };
    return &xe_backend;
 }
