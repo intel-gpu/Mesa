@@ -22,7 +22,9 @@
  */
 #include "iris_kmd_backend.h"
 
+#include <fcntl.h>
 #include <sys/mman.h>
+#include <xf86drm.h>
 
 #include "common/intel_gem.h"
 #include "dev/intel_debug.h"
@@ -198,6 +200,21 @@ xe_batch_check_for_reset(struct iris_batch *batch)
    return status;
 }
 
+static uint32_t
+xe_batch_submit_external_bo_count(struct iris_batch *batch)
+{
+   uint32_t ret = 0;
+
+   for (int i = 0; i < batch->exec_count; i++) {
+      struct iris_bo *bo = iris_get_backing_bo(batch->exec_bos[i]);
+
+      if (iris_bo_is_external(bo))
+         ret++;
+   }
+
+   return ret;
+}
+
 static int
 xe_batch_submit(struct iris_batch *batch)
 {
@@ -219,6 +236,40 @@ xe_batch_submit(struct iris_batch *batch)
    simple_mtx_lock(bo_deps_lock);
 
    iris_batch_update_syncobjs(batch);
+
+   /* Add syncobjs of external bos */
+   uint32_t extern_bo_count = xe_batch_submit_external_bo_count(batch);
+   struct {
+      struct iris_bo *bo;
+      struct iris_syncobj *iris_syncobj;
+   } *extern_bo_sync = malloc(sizeof(*extern_bo_sync) * extern_bo_count);
+   if (!extern_bo_sync && extern_bo_count) {
+      ret = -ENOMEM;
+      goto error_no_extern_bo_sync_mem;
+   }
+
+   for (int i = 0, extern_bo_count = 0; i < batch->exec_count; i++) {
+      struct iris_bo *bo = iris_get_backing_bo(batch->exec_bos[i]);
+
+      if (!iris_bo_is_external(bo)) {
+         assert(bo->real.prime_fd == -1);
+         continue;
+      }
+
+      if (bo->real.prime_fd == -1) {
+         fprintf(stderr, "Bo(%s/%i %sported) with prime_fd unset in xe_batch_submit()\n",
+                 bo->name, bo->gem_handle, bo->real.imported ? "in" : "ex");
+         continue;
+      }
+
+      extern_bo_sync[extern_bo_count].bo = bo;
+      extern_bo_sync[extern_bo_count].iris_syncobj = iris_bo_export_sync_state(bo);
+      if (!extern_bo_sync[extern_bo_count].iris_syncobj)
+         continue;
+      iris_batch_add_syncobj(batch, extern_bo_sync[extern_bo_count].iris_syncobj,
+                             IRIS_BATCH_FENCE_WAIT);
+      extern_bo_count++;
+   }
 
    sync_len = iris_batch_num_fences(batch);
    if (sync_len) {
@@ -258,9 +309,24 @@ xe_batch_submit(struct iris_batch *batch)
    if (!batch->screen->devinfo->no_hw)
        ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
 
+   if (ret)
+      goto error_exec;
+
+   int sync_file_fd = 0;
+   iris_batch_syncobj_to_sync_file_fd(batch, &sync_file_fd);
+
+   for (uint32_t i = 0; i < extern_bo_count; i++)
+      iris_bo_import_sync_state(extern_bo_sync[i].bo, sync_file_fd);
+   close(sync_file_fd);
+
+error_exec:
+   for (uint32_t i = 0; i < extern_bo_count; i++)
+      iris_syncobj_reference(bufmgr, &extern_bo_sync[i].iris_syncobj, NULL);
+
    simple_mtx_unlock(bo_deps_lock);
 
    free(syncs);
+   free(extern_bo_sync);
 
    for (int i = 0; i < batch->exec_count; i++) {
       struct iris_bo *bo = batch->exec_bos[i];
@@ -276,6 +342,8 @@ xe_batch_submit(struct iris_batch *batch)
    return ret;
 
 error_no_sync_mem:
+   free(extern_bo_sync);
+error_no_extern_bo_sync_mem:
    simple_mtx_unlock(bo_deps_lock);
    return ret;
 }
