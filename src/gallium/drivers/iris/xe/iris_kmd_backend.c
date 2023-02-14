@@ -27,6 +27,7 @@
 #include "common/intel_gem.h"
 #include "dev/intel_debug.h"
 #include "iris/iris_bufmgr.h"
+#include "iris/iris_batch.h"
 
 #include "drm-uapi/xe_drm.h"
 
@@ -156,6 +157,24 @@ xe_gem_vm_unbind(struct iris_bo *bo)
    return xe_gem_vm_bind_op(bo, XE_VM_BIND_OP_UNMAP) == 0;
 }
 
+static enum pipe_reset_status
+xe_batch_check_for_reset(struct iris_batch *batch)
+{
+   enum pipe_reset_status status = PIPE_NO_RESET;
+   struct drm_xe_engine_get_property engine_get_property = {
+      .engine_id = batch->engine_id,
+      .property = XE_ENGINE_GET_PROPERTY_BAN,
+   };
+   int ret = intel_ioctl(iris_bufmgr_get_fd(batch->screen->bufmgr),
+                         DRM_IOCTL_XE_ENGINE_GET_PROPERTY,
+                         &engine_get_property);
+
+   if (ret || engine_get_property.value)
+      status = PIPE_GUILTY_CONTEXT_RESET;
+
+   return status;
+}
+
 const struct iris_kmd_backend *xe_get_backend(void)
 {
    static const struct iris_kmd_backend xe_backend = {
@@ -164,6 +183,7 @@ const struct iris_kmd_backend *xe_get_backend(void)
       .gem_mmap = xe_gem_mmap,
       .gem_vm_bind = xe_gem_vm_bind,
       .gem_vm_unbind = xe_gem_vm_unbind,
+      .batch_check_for_reset = xe_batch_check_for_reset,
    };
    return &xe_backend;
 }
