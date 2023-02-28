@@ -6950,6 +6950,9 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
          fs_inst *load = ubld.emit(SHADER_OPCODE_A64_OWORD_BLOCK_READ_LOGICAL,
                                    load_val, srcs, A64_LOGICAL_NUM_SRCS);
+         /* For xe2, we need to align to 512 bit register sizes */
+         if (devinfo->ver >= 20)
+            load->size_written = ALIGN(load->size_written, 64);
          if (!is_pred_const)
             load->predicate = BRW_PREDICATE_NORMAL;
       }
