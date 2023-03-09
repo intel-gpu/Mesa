@@ -358,7 +358,12 @@ get_fast_clear_rect(const struct isl_device *dev,
        * horizontally and 2 vertically.  So the resulting alignment is 4
        * vertically and either 4 or 16 horizontally, and the scaledown
        * factor is 2 vertically and either 2 or 8 horizontally.
+       *
+       * Since xe2, the scaledown factors have increased compared to previous
+       * generations, so delta factors are introduced.
        */
+      unsigned int x_delta = dev->info->ver >= 20 ? 8 : 1;
+      unsigned int y_delta = dev->info->ver >= 20 ? 2 : 1;
       switch (aux_surf->format) {
       case ISL_FORMAT_MCS_2X:
       case ISL_FORMAT_MCS_4X:
@@ -373,7 +378,8 @@ get_fast_clear_rect(const struct isl_device *dev,
       default:
          unreachable("Unexpected MCS format for fast clear");
       }
-      y_scaledown = 2;
+      x_scaledown *= x_delta;
+      y_scaledown = 2 * y_delta;
       x_align = x_scaledown * 2;
       y_align = y_scaledown * 2;
    }
