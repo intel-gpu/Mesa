@@ -1774,7 +1774,7 @@ intel_device_info_update_after_hwconfig(struct intel_device_info *devinfo)
 }
 
 enum intel_wa_steppings
-intel_device_info_wa_stepping(struct intel_device_info *devinfo)
+intel_device_info_wa_stepping(const struct intel_device_info *devinfo)
 {
    if (intel_device_info_is_mtl(devinfo)) {
       if (devinfo->revision < 4)
