@@ -1313,7 +1313,8 @@ iris_bo_gem_create_from_name(struct iris_bufmgr *bufmgr,
    bo->real.global_name = handle;
    bo->real.reusable = false;
    bo->real.imported = true;
-   bo->real.mmap_mode = IRIS_MMAP_NONE;
+   bo->real.mmap_mode = bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE ?
+                        IRIS_MMAP_WB : IRIS_MMAP_NONE;
    bo->real.kflags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS | EXEC_OBJECT_PINNED;
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.kflags |= EXEC_OBJECT_CAPTURE;
@@ -1867,7 +1868,8 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
    bo->name = "prime";
    bo->real.reusable = false;
    bo->real.imported = true;
-   bo->real.mmap_mode = IRIS_MMAP_NONE;
+   bo->real.mmap_mode = bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE ?
+                        IRIS_MMAP_WB : IRIS_MMAP_NONE;
    bo->real.kflags = EXEC_OBJECT_SUPPORTS_48B_ADDRESS | EXEC_OBJECT_PINNED;
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.kflags |= EXEC_OBJECT_CAPTURE;
