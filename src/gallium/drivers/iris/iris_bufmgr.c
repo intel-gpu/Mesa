@@ -511,12 +511,13 @@ iris_bo_wait_syncobj(struct iris_bo *bo, int64_t timeout_ns)
 {
    int ret = 0;
    struct iris_bufmgr *bufmgr = bo->bufmgr;
-   const bool is_external = iris_bo_is_external(bo);
+   const bool is_external = iris_bo_is_real(bo) && bo->real.prime_fd != -1;
    struct iris_syncobj *external_implicit_syncobj = NULL;
 
-   /* If we know it's idle, don't bother with the kernel round trip. Can't do
-    * that for external BOs since we have to check the implicit
-    * synchronization information. */
+   /* If we know it's idle, don't bother with the kernel round trip.
+    * Can't do that for Xe KMD with external BOs since we have to check the
+    * implicit synchronization information.
+    */
    if (!is_external && bo->idle)
       return 0;
 
@@ -572,7 +573,7 @@ iris_bo_wait_syncobj(struct iris_bo *bo, int64_t timeout_ns)
    }
 
 out:
-   if (is_external && external_implicit_syncobj)
+   if (external_implicit_syncobj)
       iris_syncobj_reference(bufmgr, &external_implicit_syncobj, NULL);
 
    simple_mtx_unlock(&bufmgr->bo_deps_lock);
