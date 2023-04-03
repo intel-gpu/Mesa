@@ -75,6 +75,22 @@ i915_gem_create(struct anv_device *device,
       .flags = flags,
    };
 
+   struct drm_i915_gem_create_ext_set_pat set_pat_param = { 0 };
+   if (device->info->has_set_pat_uapi) {
+      /* Set PAT param */
+      uint32_t pat_index;
+      if (alloc_flags & (ANV_BO_ALLOC_SNOOPED))
+         pat_index = device->info->pat.coherent;
+      else if (alloc_flags & (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_SCANOUT))
+         pat_index = device->info->pat.scanout;
+      else
+         pat_index = device->info->pat.writeback;
+      set_pat_param.pat_index = pat_index;
+      intel_gem_add_ext(&gem_create.extensions,
+                        I915_GEM_CREATE_EXT_SET_PAT,
+                        &set_pat_param.base);
+   }
+
    if (intel_ioctl(device->fd, DRM_IOCTL_I915_GEM_CREATE_EXT, &gem_create))
       return 0;
 
