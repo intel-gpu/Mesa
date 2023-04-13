@@ -1306,6 +1306,12 @@ err_free:
    return NULL;
 }
 
+static bool
+needs_prime_fd(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE;
+}
+
 /**
  * Returns a iris_bo wrapping the given buffer object handle.
  *
@@ -1923,7 +1929,7 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.kflags |= EXEC_OBJECT_CAPTURE;
    bo->gem_handle = handle;
-   bo->real.prime_fd = dup(prime_fd);
+   bo->real.prime_fd = needs_prime_fd(bufmgr) ? dup(prime_fd) : -1;
 
    /* From the Bspec, Memory Compression - Gfx12:
     *
@@ -1975,6 +1981,14 @@ iris_bo_mark_exported_locked(struct iris_bo *bo)
        */
       bo->real.exported = true;
       bo->real.reusable = false;
+
+      if (needs_prime_fd(bufmgr) && bo->real.prime_fd == -1) {
+         if (drmPrimeHandleToFD(bufmgr->fd, bo->gem_handle,
+                                DRM_CLOEXEC | DRM_RDWR, &bo->real.prime_fd)) {
+            fprintf(stderr, "Failed to get prime fd for bo %s/%u\n",
+                    bo->name, bo->gem_handle);
+         }
+      }
    }
 }
 
@@ -2009,9 +2023,6 @@ iris_bo_export_dmabuf(struct iris_bo *bo, int *prime_fd)
       return -errno;
 
    iris_bo_mark_exported(bo);
-
-   if (bo->real.prime_fd == -1)
-      bo->real.prime_fd = dup(*prime_fd);
 
    return 0;
 }
