@@ -887,6 +887,7 @@ alloc_bo_from_slabs(struct iris_bufmgr *bufmgr,
    p_atomic_set(&bo->refcount, 1);
    bo->name = name;
    bo->size = size;
+   bo->real.prime_fd = -1;
 
    /* Zero the contents if necessary.  If this fails, fall back to
     * allocating a fresh BO, which will always be zeroed by the kernel.
@@ -1270,6 +1271,12 @@ err_close:
 err_free:
    free(bo);
    return NULL;
+}
+
+static bool
+needs_prime_fd_dup(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE;
 }
 
 /**
@@ -1891,7 +1898,7 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd)
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.kflags |= EXEC_OBJECT_CAPTURE;
    bo->gem_handle = handle;
-   bo->real.prime_fd = dup(prime_fd);
+   bo->real.prime_fd = needs_prime_fd_dup(bufmgr) ? dup(prime_fd) : -1;
 
    /* From the Bspec, Memory Compression - Gfx12:
     *
@@ -1978,7 +1985,7 @@ iris_bo_export_dmabuf(struct iris_bo *bo, int *prime_fd)
 
    iris_bo_mark_exported(bo);
 
-   if (bo->real.prime_fd == -1)
+   if (bo->real.prime_fd == -1 && needs_prime_fd_dup(bufmgr))
       bo->real.prime_fd = dup(*prime_fd);
 
    return 0;
