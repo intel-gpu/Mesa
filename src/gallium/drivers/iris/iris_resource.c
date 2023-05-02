@@ -2623,7 +2623,7 @@ iris_transfer_map(struct pipe_context *ctx,
          iris_map_s8(map);
       } else if (surf->tiling != ISL_TILING_LINEAR) {
          iris_map_tiled_memcpy(map);
-      } else {
+      } else if (!iris_bo_is_imported(res->bo)) {
          iris_map_direct(map);
       }
    }
