@@ -815,6 +815,10 @@ iris_batch_update_syncobjs(struct iris_batch *batch)
    }
 }
 
+/**
+ * Convert the syncobj which will be signaled when this batch completes
+ * to a SYNC_FILE object, for use with import/export sync ioctls.
+ */
 int
 iris_batch_syncobj_to_sync_file_fd(struct iris_batch *batch, int *out_fd)
 {
@@ -832,7 +836,7 @@ iris_batch_syncobj_to_sync_file_fd(struct iris_batch *batch, int *out_fd)
                    &syncobj_to_fd_ioctl)) {
       fprintf(stderr, "DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD ioctl failed (%d)\n",
               errno);
-      return 1;
+      return -1;
    }
 
    assert(syncobj_to_fd_ioctl.fd >= 0);

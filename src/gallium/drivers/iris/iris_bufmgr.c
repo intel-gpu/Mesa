@@ -475,9 +475,10 @@ iris_bo_export_sync_state(struct iris_bo *bo)
       .fd = sync_file_fd,
    };
    if (intel_ioctl(drm_fd, DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE,
-                   &syncobj_import_ioctl))
+                   &syncobj_import_ioctl)) {
       fprintf(stderr, "DRM_IOCTL_SYNCOBJ_FD_TO_HANDLE ioctl failed (%d)\n",
               errno);
+   }
 
    close(sync_file_fd);
 
