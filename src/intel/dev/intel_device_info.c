@@ -1125,7 +1125,12 @@ static const struct intel_device_info intel_device_info_dg2_g12 = {
    .has_integer_dword_mul = false,                              \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
-   .has_ray_tracing = true
+   .has_ray_tracing = true,                                     \
+   .pat = {                                                     \
+      .coherent = 3, /* 1-way coherent */                       \
+      .scanout = 3, /* 1-way coherent */                        \
+      .writeback = 0,                                           \
+   }
 
 static const struct intel_device_info intel_device_info_mtl_m = {
    MTL_FEATURES,
