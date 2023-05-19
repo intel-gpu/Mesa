@@ -399,8 +399,12 @@ xe_batch_submit(struct iris_batch *batch)
       .syncs = (uintptr_t)syncs,
       .num_syncs = sync_len,
    };
-   if (!batch->screen->devinfo->no_hw)
-       ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
+   if (!batch->screen->devinfo->no_hw) {
+      uint8_t tries = 3;
+      do {
+         ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
+      } while (ret && errno == ENOMEM && --tries);
+   }
 
    if (ret) {
       ret = -errno;
