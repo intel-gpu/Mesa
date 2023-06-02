@@ -687,7 +687,8 @@ bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *d
 
    /* TODO: We might be able to reduce alignment to 4Kb on DG1. */
    if (devinfo->verx10 >= 125)
-      devinfo->mem_alignment = 64 * 1024;
+      devinfo->mem_alignment =
+         devinfo->prelim_drm ? 2 * 1024 * 1024 : 64 * 1024;
    else if (devinfo->has_local_mem)
       devinfo->mem_alignment = 64 * 1024;
    else
