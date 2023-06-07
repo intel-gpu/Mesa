@@ -1369,6 +1369,10 @@ blorp_emit_depth_stencil_config(struct blorp_batch *batch,
     * This also seems sufficient to handle Wa_14014097488.
     */
    blorp_emit(batch, GENX(PIPE_CONTROL), pc) {
+#if GFX_VER > 12
+      pc.PSSStallSyncEnable =
+         intel_needs_workaround(isl_dev->info, 14019039974);
+#endif
       pc.PostSyncOperation = WriteImmediateData;
       pc.Address = blorp_get_workaround_address(batch);
    }
@@ -1485,6 +1489,11 @@ blorp_emit_gfx8_hiz_op(struct blorp_batch *batch,
     * to “Write Immediate Data” enabled.
     */
    blorp_emit(batch, GENX(PIPE_CONTROL), pc) {
+#if GFX_VER > 12
+      pc.PSSStallSyncEnable =
+         intel_needs_workaround(batch->blorp->compiler->brw->devinfo,
+                                14019039974);
+#endif
       pc.PostSyncOperation = WriteImmediateData;
       pc.Address = blorp_get_workaround_address(batch);
    }
@@ -1786,6 +1795,10 @@ blorp_exec_compute(struct blorp_batch *batch, const struct blorp_params *params)
     * but MI_FLUSH isn't really a thing, so we assume they meant PIPE_CONTROL.
     */
    blorp_emit(batch, GENX(PIPE_CONTROL), pc) {
+#if GFX_VER > 12
+      pc.PSSStallSyncEnable =
+         intel_needs_workaround(isl_dev->info, 14019039974);
+#endif
       pc.CommandStreamerStallEnable = true;
       pc.StallAtPixelScoreboard = true;
    }
