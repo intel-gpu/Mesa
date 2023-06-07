@@ -10232,6 +10232,10 @@ iris_emit_raw_pipe_control(struct iris_batch *batch,
       flags |= PIPE_CONTROL_DEPTH_STALL;
    }
 
+   /* Wa_14019039974 : Set “PSS Sync Stall” for all PIPE_CONTROLs. */
+   if (intel_needs_workaround(devinfo, 14019039974))
+      flags |= PIPE_CONTROL_PSS_STALL_SYNC;
+
 #if INTEL_WA_1607156449_GFX_VER || INTEL_NEEDS_WA_18040903259
    /* Wa_1607156449: For COMPUTE Workload - Any PIPE_CONTROL command with
     * POST_SYNC Operation Enabled MUST be preceded by a PIPE_CONTROL with
