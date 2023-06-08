@@ -282,6 +282,15 @@ blorp_exec_on_render(struct blorp_batch *batch,
 
    genX(flush_pipeline_select_3d)(cmd_buffer);
 
+   if (blorp_updates_clear_color(batch, params)) {
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                                ANV_PIPE_STALL_AT_SCOREBOARD_BIT |
+                                ANV_PIPE_STATE_CACHE_INVALIDATE_BIT |
+                                ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT,
+                                "before blorp clear color update");
+   }
+
    /* Apply any outstanding flushes in case pipeline select haven't. */
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
 

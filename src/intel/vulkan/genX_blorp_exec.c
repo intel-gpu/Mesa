@@ -295,6 +295,14 @@ blorp_exec_on_render(struct blorp_batch *batch,
                                 "before blorp BTI change");
    }
 #endif
+   if (blorp_updates_clear_color(batch, params)) {
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                                ANV_PIPE_STALL_AT_SCOREBOARD_BIT |
+                                ANV_PIPE_STATE_CACHE_INVALIDATE_BIT |
+                                ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT,
+                                "before blorp clear color update");
+   }
 
    if (params->depth.enabled &&
        !(batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))

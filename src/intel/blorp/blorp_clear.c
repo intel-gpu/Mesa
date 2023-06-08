@@ -1678,3 +1678,16 @@ blorp_ccs_ambiguate(struct blorp_batch *batch,
 
    batch->blorp->exec(batch, &params);
 }
+
+bool
+blorp_updates_clear_color(const struct blorp_batch *batch,
+                          const struct blorp_params *params)
+{
+   if (batch->flags & BLORP_BATCH_NO_UPDATE_CLEAR_COLOR)
+      return false;
+
+   return (params->fast_clear_op == ISL_AUX_OP_FAST_CLEAR &&
+           params->dst.clear_color_addr.buffer != NULL) ||
+          (params->hiz_op == ISL_AUX_OP_FAST_CLEAR &&
+           params->depth.clear_color_addr.buffer != NULL);
+}

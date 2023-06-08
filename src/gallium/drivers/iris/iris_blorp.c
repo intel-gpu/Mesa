@@ -285,6 +285,8 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
 {
    struct iris_context *ice = blorp_batch->blorp->driver_ctx;
    struct iris_batch *batch = blorp_batch->driver_batch;
+   uint32_t pc_flags = 0;
+   const char *pc_reason = NULL;
 
 #if GFX_VER >= 11
    /* The PIPE_CONTROL command description says:
@@ -295,11 +297,20 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
     *     is set due to new association of BTI, PS Scoreboard Stall bit must
     *     be set in this packet."
     */
-   iris_emit_pipe_control_flush(batch,
-                                "workaround: RT BTI change [blorp]",
-                                PIPE_CONTROL_RENDER_TARGET_FLUSH |
-                                PIPE_CONTROL_STALL_AT_SCOREBOARD);
+   pc_flags = PIPE_CONTROL_RENDER_TARGET_FLUSH |
+              PIPE_CONTROL_STALL_AT_SCOREBOARD;
+   pc_reason = "workaround: RT BTI change [blorp]";
 #endif
+   if (blorp_updates_clear_color(blorp_batch, params)) {
+      pc_flags |= PIPE_CONTROL_RENDER_TARGET_FLUSH |
+                  PIPE_CONTROL_STALL_AT_SCOREBOARD |
+                  PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+                  PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE;
+      pc_reason = "before blorp clear color update";
+   }
+
+   if (pc_flags != 0)
+      iris_emit_pipe_control_flush(batch, pc_reason, pc_flags);
 
    if (params->depth.enabled &&
        !(blorp_batch->flags & BLORP_BATCH_NO_EMIT_DEPTH_STENCIL))
