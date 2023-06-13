@@ -1,26 +1,6 @@
+/* SPDX-License-Identifier: MIT */
 /*
- * Copyright 2021 Intel Corporation. All Rights Reserved.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the
- * "Software"), to deal in the Software without restriction, including
- * without limitation the rights to use, copy, modify, merge, publish,
- * distribute, sub license, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so, subject to
- * the following conditions:
- *
- * The above copyright notice and this permission notice (including the
- * next paragraph) shall be included in all copies or substantial portions
- * of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
- * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
- * IN NO EVENT SHALL TUNGSTEN GRAPHICS AND/OR ITS SUPPLIERS BE LIABLE FOR
- * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
- * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
- * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
+ * Copyright © 2023 Intel Corporation
  */
 
 #ifndef _UAPI_XE_DRM_H_
@@ -125,51 +105,128 @@ struct xe_user_extension {
 #define DRM_IOCTL_XE_GEM_CREATE			DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_GEM_CREATE, struct drm_xe_gem_create)
 #define DRM_IOCTL_XE_GEM_MMAP_OFFSET		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_GEM_MMAP_OFFSET, struct drm_xe_gem_mmap_offset)
 #define DRM_IOCTL_XE_VM_CREATE			DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_VM_CREATE, struct drm_xe_vm_create)
-#define DRM_IOCTL_XE_VM_DESTROY			DRM_IOW( DRM_COMMAND_BASE + DRM_XE_VM_DESTROY, struct drm_xe_vm_destroy)
-#define DRM_IOCTL_XE_VM_BIND			DRM_IOW( DRM_COMMAND_BASE + DRM_XE_VM_BIND, struct drm_xe_vm_bind)
+#define DRM_IOCTL_XE_VM_DESTROY			 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_VM_DESTROY, struct drm_xe_vm_destroy)
+#define DRM_IOCTL_XE_VM_BIND			 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_VM_BIND, struct drm_xe_vm_bind)
 #define DRM_IOCTL_XE_ENGINE_CREATE		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_ENGINE_CREATE, struct drm_xe_engine_create)
 #define DRM_IOCTL_XE_ENGINE_GET_PROPERTY	DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_ENGINE_GET_PROPERTY, struct drm_xe_engine_get_property)
-#define DRM_IOCTL_XE_ENGINE_DESTROY		DRM_IOW( DRM_COMMAND_BASE + DRM_XE_ENGINE_DESTROY, struct drm_xe_engine_destroy)
-#define DRM_IOCTL_XE_EXEC			DRM_IOW( DRM_COMMAND_BASE + DRM_XE_EXEC, struct drm_xe_exec)
+#define DRM_IOCTL_XE_ENGINE_DESTROY		 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_ENGINE_DESTROY, struct drm_xe_engine_destroy)
+#define DRM_IOCTL_XE_EXEC			 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_EXEC, struct drm_xe_exec)
 #define DRM_IOCTL_XE_MMIO			DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_MMIO, struct drm_xe_mmio)
-#define DRM_IOCTL_XE_ENGINE_SET_PROPERTY	DRM_IOW( DRM_COMMAND_BASE + DRM_XE_ENGINE_SET_PROPERTY, struct drm_xe_engine_set_property)
+#define DRM_IOCTL_XE_ENGINE_SET_PROPERTY	 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_ENGINE_SET_PROPERTY, struct drm_xe_engine_set_property)
 #define DRM_IOCTL_XE_WAIT_USER_FENCE		DRM_IOWR(DRM_COMMAND_BASE + DRM_XE_WAIT_USER_FENCE, struct drm_xe_wait_user_fence)
-#define DRM_IOCTL_XE_VM_MADVISE			DRM_IOW( DRM_COMMAND_BASE + DRM_XE_VM_MADVISE, struct drm_xe_vm_madvise)
+#define DRM_IOCTL_XE_VM_MADVISE			 DRM_IOW(DRM_COMMAND_BASE + DRM_XE_VM_MADVISE, struct drm_xe_vm_madvise)
 
-struct drm_xe_engine_class_instance {
-	__u16 engine_class;
 
-#define DRM_XE_ENGINE_CLASS_RENDER		0
-#define DRM_XE_ENGINE_CLASS_COPY		1
-#define DRM_XE_ENGINE_CLASS_VIDEO_DECODE	2
-#define DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE	3
-#define DRM_XE_ENGINE_CLASS_COMPUTE		4
-	/*
-	 * Kernel only class (not actual hardware engine class). Used for
-	 * creating ordered queues of VM bind operations.
+/**
+ * enum drm_xe_memory_class - Supported memory classes.
+ */
+enum drm_xe_memory_class {
+	/** @XE_MEM_REGION_CLASS_SYSMEM: Represents system memory. */
+	XE_MEM_REGION_CLASS_SYSMEM = 0,
+	/**
+	 * @XE_MEM_REGION_CLASS_VRAM: On discrete platforms, this
+	 * represents the memory that is local to the device, which we
+	 * call VRAM. Not valid on integrated platforms.
 	 */
-#define DRM_XE_ENGINE_CLASS_VM_BIND		5
-
-	__u16 engine_instance;
-	__u16 gt_id;
+	XE_MEM_REGION_CLASS_VRAM
 };
 
-#define XE_MEM_REGION_CLASS_SYSMEM	0
-#define XE_MEM_REGION_CLASS_VRAM	1
-
+/**
+ * struct drm_xe_query_mem_usage - The region info query enumerates all regions
+ * known to the driver by filling in an array of struct drm_xe_query_mem_region
+ * structures.
+ */
 struct drm_xe_query_mem_usage {
+	/**
+	 * @num_regions: Number of supported memory regions for this device.
+	 *
+	 * The @regions will contain @num_regions entries.
+	 */
 	__u32 num_regions;
+	/** @pad: MBZ */
 	__u32 pad;
-
+	/**
+	 * struct drm_xe_query_mem_region - Describes some region as known to
+	 * the driver.
+	 */
 	struct drm_xe_query_mem_region {
+		/**
+		 * @mem_class: The memory class describing this region.
+		 *
+		 * See enum drm_xe_memory_class for supported values.
+		 */
 		__u16 mem_class;
-		__u16 instance;	/* unique ID even among different classes */
+		/**
+		 * @instance: The instance for this region.
+		 *
+		 * The @mem_class and @instance taken together will always give
+		 * a unique pair.
+		 */
+		__u16 instance;
+		/** @pad: MBZ */
 		__u32 pad;
+		/**
+		 * @min_page_size: Min page-size in bytes for this region.
+		 *
+		 * When the kernel allocates memory for this region, the
+		 * underlying pages will be at least @min_page_size in size.
+		 *
+		 * Important note: When userspace allocates a GTT address which
+		 * can point to memory allocated from this region, it must also
+		 * respect this minimum alignment. This is enforced by the
+		 * kernel.
+		 */
 		__u32 min_page_size;
+		/**
+		 * @max_page_size: Max page-size in bytes for this region.
+		 */
 		__u32 max_page_size;
+		/**
+		 * @total_size: The usable size in bytes for this region.
+		 */
 		__u64 total_size;
+		/**
+		 * @used: Estimate of the memory used in bytes for this region.
+		 *
+		 * Requires CAP_PERFMON or CAP_SYS_ADMIN to get reliable
+		 * accounting.  Without this the value here will always equal
+		 * zero.
+		 */
 		__u64 used;
-		__u64 reserved[8];
+		/*
+		 * @cpu_visible_size: How much of this region we can CPU access,
+		 * in bytes.
+		 *
+		 * This will be always be <= @total_size, and the remainder (if
+		 * there is any) will not be CPU accessible. If smaller then
+		 * this system is considered a small BAR system.
+		 *
+		 * On systems without small BAR, the probed_size will always
+		 * equal the @total_size, since all of it will be CPU
+		 * accessible.
+		 *
+		 * Note this is only tracked for XE_MEM_REGION_CLASS_VRAM
+		 * regions (for other types the value here will always equal
+		 * zero).
+		 */
+		__u64 cpu_visible_size;
+		/**
+		 * @cpu_visible_used: Estimate of CPU visible memory used, in
+		 * bytes.
+		 *
+		 * Note this is only tracked for XE_MEM_REGION_CLASS_VRAM
+		 * regions (for other types the value here will always equal the
+		 * @cpu_visible_size).
+		 *
+		 * Requires CAP_PERFMON or CAP_SYS_ADMIN to get reliable
+		 * accounting. Without this the value here will always equal the
+		 * @cpu_visible_used.  Note this is only currently tracked for
+		 * XE_MEM_REGION_CLASS_VRAM regions (for other types the value
+		 * here will also always be zero).
+		 */
+		__u64 cpu_visible_used;
+		/** @reserved: MBZ */
+		__u64 reserved[6];
 	} regions[];
 };
 
@@ -185,7 +242,7 @@ struct drm_xe_query_config {
 #define XE_QUERY_CONFIG_GT_COUNT		4
 #define XE_QUERY_CONFIG_MEM_REGION_COUNT	5
 #define XE_QUERY_CONFIG_MAX_ENGINE_PRIORITY	6
-#define XE_QUERY_CONFIG_NUM_PARAM		XE_QUERY_CONFIG_MAX_ENGINE_PRIORITY + 1
+#define XE_QUERY_CONFIG_NUM_PARAM		(XE_QUERY_CONFIG_MAX_ENGINE_PRIORITY + 1)
 	__u64 info[];
 };
 
@@ -271,6 +328,22 @@ struct drm_xe_gem_create {
 	 */
 #define XE_GEM_CREATE_FLAG_DEFER_BACKING	(0x1 << 24)
 #define XE_GEM_CREATE_FLAG_SCANOUT		(0x1 << 25)
+/*
+ * When using VRAM as a possible placement, ensure that the corresponding VRAM
+ * allocation will always use the CPU accessible part of VRAM. This is important
+ * for small-bar systems (on full-bar systems this gets turned into a noop).
+ *
+ * Note: System memory can be used as an extra placement if the kernel should
+ * spill the allocation to system memory, if space can't be made available in
+ * the CPU accessible part of VRAM (giving the same behaviour as the i915
+ * interface, see I915_GEM_CREATE_EXT_FLAG_NEEDS_CPU_ACCESS).
+ *
+ * Note: For clear-color CCS surfaces the kernel needs to read the clear-color
+ * value stored in the buffer, and on discrete platforms we need to use VRAM for
+ * display surfaces, therefore the kernel requires setting this flag for such
+ * objects, otherwise an error is thrown.
+ */
+#define XE_GEM_CREATE_FLAG_NEEDS_VISIBLE_VRAM	(0x1 << 26)
 	__u32 flags;
 
 	/**
@@ -407,10 +480,10 @@ struct drm_xe_vm_bind_op {
 	__u64 addr;
 
 	/**
-	 * @gt_mask: Mask for which GTs to create binds for, 0 == All GTs,
+	 * @tile_mask: Mask for which tiles to create binds for, 0 == All tiles,
 	 * only applies to creating new VMAs
 	 */
-	__u64 gt_mask;
+	__u64 tile_mask;
 
 	/** @op: Operation to perform (lower 16 bits) and flags (upper 16 bits) */
 	__u32 op;
@@ -437,8 +510,8 @@ struct drm_xe_vm_bind_op {
 	 * If this flag is clear and the IOCTL doesn't return an error, in
 	 * practice the bind op is good and will complete.
 	 *
-	 * If this flag is set and doesn't return return an error, the bind op
-	 * can still fail and recovery is needed. If configured, the bind op that
+	 * If this flag is set and doesn't return an error, the bind op can
+	 * still fail and recovery is needed. If configured, the bind op that
 	 * caused the error will be captured in drm_xe_vm_bind_op_error_capture.
 	 * Once the user sees the error (via a ufence +
 	 * XE_VM_PROPERTY_BIND_OP_ERROR_CAPTURE_ADDRESS), it should free memory
@@ -456,6 +529,14 @@ struct drm_xe_vm_bind_op {
 	 * than differing the MAP to the page fault handler.
 	 */
 #define XE_VM_BIND_FLAG_IMMEDIATE	(0x1 << 18)
+	/*
+	 * When the NULL flag is set, the page tables are setup with a special
+	 * bit which indicates writes are dropped and all reads return zero.  In
+	 * the future, the NULL flags will only be valid for XE_VM_BIND_OP_MAP
+	 * operations, the BO handle MBZ, and the BO offset MBZ. This flag is
+	 * intended to implement VK sparse bindings.
+	 */
+#define XE_VM_BIND_FLAG_NULL		(0x1 << 19)
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
@@ -554,6 +635,24 @@ struct drm_xe_engine_set_property {
 
 	/** @reserved: Reserved */
 	__u64 reserved[2];
+};
+
+struct drm_xe_engine_class_instance {
+	__u16 engine_class;
+
+#define DRM_XE_ENGINE_CLASS_RENDER		0
+#define DRM_XE_ENGINE_CLASS_COPY		1
+#define DRM_XE_ENGINE_CLASS_VIDEO_DECODE	2
+#define DRM_XE_ENGINE_CLASS_VIDEO_ENHANCE	3
+#define DRM_XE_ENGINE_CLASS_COMPUTE		4
+	/*
+	 * Kernel only class (not actual hardware engine class). Used for
+	 * creating ordered queues of VM bind operations.
+	 */
+#define DRM_XE_ENGINE_CLASS_VM_BIND		5
+
+	__u16 engine_instance;
+	__u16 gt_id;
 };
 
 struct drm_xe_engine_create {
@@ -666,9 +765,9 @@ struct drm_xe_exec {
 	__u64 syncs;
 
 	/**
-	  * @address: address of batch buffer if num_batch_buffer == 1 or an
-	  * array of batch buffer addresses
-	  */
+	 * @address: address of batch buffer if num_batch_buffer == 1 or an
+	 * array of batch buffer addresses
+	 */
 	__u64 address;
 
 	/**
@@ -789,6 +888,9 @@ struct drm_xe_vm_madvise {
 	 * Setting the preferred location will trigger a migrate of the VMA
 	 * backing store to new location if the backing store is already
 	 * allocated.
+	 *
+	 * For DRM_XE_VM_MADVISE_PREFERRED_MEM_CLASS usage, see enum
+	 * drm_xe_memory_class.
 	 */
 #define DRM_XE_VM_MADVISE_PREFERRED_MEM_CLASS	0
 #define DRM_XE_VM_MADVISE_PREFERRED_GT		1
