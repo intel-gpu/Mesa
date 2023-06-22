@@ -431,10 +431,17 @@ error_implicit_sync_import:
    return ret;
 }
 
+static uint32_t
+xe_gem_create_userptr(struct iris_bufmgr *bufmgr, void *ptr, uint64_t size)
+{
+   return 0;
+}
+
 const struct iris_kmd_backend *xe_get_backend(void)
 {
    static const struct iris_kmd_backend xe_backend = {
       .gem_create = xe_gem_create,
+      .gem_create_userptr = xe_gem_create_userptr,
       .gem_mmap = xe_gem_mmap,
       .gem_vm_bind = xe_gem_vm_bind,
       .gem_vm_unbind = xe_gem_vm_unbind,
