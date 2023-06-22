@@ -30,6 +30,8 @@
 
 #include "drm-uapi/xe_drm.h"
 
+#define USERPTR_GEM_HANDLE UINT32_MAX
+
 static uint32_t
 xe_gem_create(struct anv_device *device,
               const struct intel_memory_class_instance **regions,
@@ -59,6 +61,9 @@ xe_gem_create(struct anv_device *device,
 static void
 xe_gem_close(struct anv_device *device, uint32_t handle)
 {
+   if (handle == USERPTR_GEM_HANDLE)
+      return;
+
    struct drm_gem_close close = {
       .handle = handle,
    };
@@ -88,6 +93,15 @@ xe_gem_vm_bind_op(struct anv_device *device, struct anv_bo *bo, uint32_t op)
    if (ret)
       return ret;
 
+   uint32_t obj = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
+   uint64_t obj_offset = 0;
+   if (bo->from_host_ptr) {
+      obj = 0;
+      obj_offset = (uintptr_t)bo->map;
+      if (op == XE_VM_BIND_OP_MAP)
+         op = XE_VM_BIND_OP_MAP_USERPTR;
+   }
+
    struct drm_xe_sync sync = {
       .flags = DRM_XE_SYNC_SYNCOBJ | DRM_XE_SYNC_SIGNAL,
       .handle = syncobj_handle,
@@ -95,8 +109,8 @@ xe_gem_vm_bind_op(struct anv_device *device, struct anv_bo *bo, uint32_t op)
    struct drm_xe_vm_bind args = {
       .vm_id = device->vm_id,
       .num_binds = 1,
-      .bind.obj = op == XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle,
-      .bind.obj_offset = 0,
+      .bind.obj = obj,
+      .bind.obj_offset = obj_offset,
       .bind.range = bo->actual_size,
       .bind.addr = intel_48b_address(bo->offset),
       .bind.op = op,
@@ -135,7 +149,7 @@ static int xe_gem_vm_unbind(struct anv_device *device, struct anv_bo *bo)
 static uint32_t
 xe_gem_create_userptr(struct anv_device *device, void *mem, uint64_t size)
 {
-   return 0;
+   return USERPTR_GEM_HANDLE;
 }
 
 const struct anv_kmd_backend *
