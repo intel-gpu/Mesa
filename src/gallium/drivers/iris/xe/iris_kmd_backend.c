@@ -434,7 +434,7 @@ error_implicit_sync_import:
 static uint32_t
 xe_gem_create_userptr(struct iris_bufmgr *bufmgr, void *ptr, uint64_t size)
 {
-   return 0;
+   return UINT32_MAX;
 }
 
 const struct iris_kmd_backend *xe_get_backend(void)

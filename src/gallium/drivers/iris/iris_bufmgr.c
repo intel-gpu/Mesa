@@ -1289,6 +1289,10 @@ iris_bo_close(int fd, uint32_t gem_handle)
 int
 iris_bufmgr_bo_close(struct iris_bufmgr *bufmgr, uint32_t gem_handle)
 {
+   if (bufmgr->devinfo.kmd_type == INTEL_KMD_TYPE_XE &&
+       gem_handle == UINT32_MAX)
+      return 0;
+
    return iris_bo_close(bufmgr->fd, gem_handle);
 }
 
@@ -1344,9 +1348,15 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY;
    bo->real.mmap_mode = iris_bo_create_userptr_get_mmap_mode(bufmgr);
    bo->real.prime_fd = -1;
+   bo->real.reusable = false;
+
+   if (!bufmgr->kmd_backend->gem_vm_bind(bo))
+      goto err_vma_free;
 
    return bo;
 
+err_vma_free:
+   vma_free(bufmgr, bo->address, bo->size);
 err_close:
    iris_bufmgr_bo_close(bufmgr, bo->gem_handle);
 err_free:
