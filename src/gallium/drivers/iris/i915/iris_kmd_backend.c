@@ -426,7 +426,7 @@ i915_gem_create_userptr(struct iris_bufmgr *bufmgr, void *ptr, uint64_t size)
    if (!devinfo->has_userptr_probe) {
       /* Check the buffer for validity before we try and use it in a batch */
       if (i915_gem_set_domain(bufmgr, arg.handle, I915_GEM_DOMAIN_CPU, 0)) {
-         /* TODO gem close */
+         iris_bufmgr_bo_close(bufmgr, arg.handle);
          return 0;
       }
    }

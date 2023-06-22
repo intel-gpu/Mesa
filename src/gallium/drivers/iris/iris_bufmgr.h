@@ -604,4 +604,6 @@ enum iris_madvice {
 void iris_bo_import_sync_state(struct iris_bo *bo, int sync_file_fd);
 struct iris_syncobj *iris_bo_export_sync_state(struct iris_bo *bo);
 
+int iris_bufmgr_bo_close(struct iris_bufmgr *bufmgr, uint32_t gem_handle);
+
 #endif /* IRIS_BUFMGR_H */

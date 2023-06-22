@@ -1286,7 +1286,7 @@ iris_bo_close(int fd, uint32_t gem_handle)
    return intel_ioctl(fd, DRM_IOCTL_GEM_CLOSE, &close);
 }
 
-static int
+int
 iris_bufmgr_bo_close(struct iris_bufmgr *bufmgr, uint32_t gem_handle)
 {
    return iris_bo_close(bufmgr->fd, gem_handle);
