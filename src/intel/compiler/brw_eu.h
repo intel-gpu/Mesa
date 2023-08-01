@@ -1010,6 +1010,7 @@ lsc_op_num_data_values(unsigned _op)
    case LSC_OP_LOAD_CMASK:
    case LSC_OP_FENCE:
    case LSC_OP_LOAD_CMASK_MSRT:
+   case LSC_OP_STORE_CMASK_MSRT:
       /* XXX: actually check docs */
       return 0;
    default:
