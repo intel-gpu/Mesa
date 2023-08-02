@@ -191,6 +191,7 @@ class GenXml(object):
         filter_ty = lambda s: filter(lambda i: i.tag == s, orig_elements)
         filter_ty_item = lambda s: dict(map(name_and_obj, filter_ty(s)))
         orig_by_tag = {
+            'enum': filter_ty_item('enum'),
             'struct': filter_ty_item('struct'),
             'instruction': filter_ty_item('instruction'),
             'register': filter_ty_item('register'),
