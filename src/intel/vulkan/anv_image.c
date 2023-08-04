@@ -843,7 +843,10 @@ add_aux_surface_if_supported(struct anv_device *device,
          return add_aux_state_tracking_buffer(device, image, aux_state_offset,
                                               plane);
    } else if ((aspect & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV) && image->vk.samples > 1) {
-      assert(!(image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT));
+
+      /* HSD 14017185931 */
+      if ((image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT))
+         return VK_SUCCESS;
       ok = isl_surf_get_mcs_surf(&device->isl_dev,
                                  &image->planes[plane].primary_surface.isl,
                                  &image->planes[plane].aux_surface.isl);
