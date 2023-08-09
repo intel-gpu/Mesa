@@ -1970,6 +1970,38 @@ xy_aux_mode(const struct blorp_surface_info *info)
 #endif // GFX_VER < 20
 #endif // GFX_VERx10 >= 125
 
+/* Wa_16020398787:
+ *
+ *    For Each submission of the Blit with a given array index,
+ *    base address needs to be shifted on the basis of array index using
+ *    qpitch and pitch.
+ */
+const static struct blorp_address
+blorp_wa_16020398787(const struct intel_device_info *devinfo,
+                     const struct blorp_surface_info *surf_info,
+                     uint32_t *array_index)
+{
+   struct blorp_address addr = surf_info->addr;
+   *array_index = surf_info->view.base_array_layer + surf_info->z_offset;
+#if INTEL_NEEDS_WA_16020398787
+   const struct isl_surf *surf = &surf_info->surf;
+   if (!intel_needs_workaround(devinfo, 16020398787) ||
+       surf->logical_level0_px.h < 16 * 1024)
+      return addr;
+
+   const unsigned pitch_unit = surf->tiling == ISL_TILING_LINEAR ? 1 : 4;
+   const uint32_t pitch = (surf->row_pitch_B / pitch_unit) - 1;
+
+   addr.offset += *array_index * (isl_get_qpitch(surf) >> 2);
+   addr.offset += pitch * surf_info->tile_y_sa;
+   addr.offset +=
+      isl_format_get_layout(surf->format)->bpb * surf_info->tile_x_sa;
+
+   *array_index = 0;
+#endif
+   return addr;
+}
+
 UNUSED static void
 blorp_xy_block_copy_blt(struct blorp_batch *batch,
                         const struct blorp_params *params)
@@ -1978,6 +2010,8 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
    unreachable("Blitter is only supported on Gfx12+");
 #else
    UNUSED const struct isl_device *isl_dev = batch->blorp->isl_dev;
+   const struct isl_surf *src_surf = &params->src.surf;
+   const struct isl_surf *dst_surf = &params->dst.surf;
 
    assert(batch->flags & BLORP_BATCH_USE_BLITTER);
    assert(!(batch->flags & BLORP_BATCH_NO_UPDATE_CLEAR_COLOR));
@@ -2009,9 +2043,6 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
    assert(src_x1 - src_x0 == dst_x1 - dst_x0);
    assert(src_y1 - src_y0 == dst_y1 - dst_y0);
 
-   const struct isl_surf *src_surf = &params->src.surf;
-   const struct isl_surf *dst_surf = &params->dst.surf;
-
    const struct isl_format_layout *fmtl =
       isl_format_get_layout(params->dst.view.format);
 
@@ -2031,6 +2062,18 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
    struct isl_extent3d dst_align = isl_get_image_alignment(dst_surf);
 #endif
 
+   /* Wa_16020398787:
+    *
+    *    For Each submission of the Blit with a given array index,
+    *    base address needs to be shifted on the basis of array index using
+    *    qpitch and pitch.
+    */
+   uint32_t src_array_index, dst_array_index;
+   struct blorp_address src_addr =
+      blorp_wa_16020398787(isl_dev->info, &params->src, &src_array_index);
+   struct blorp_address dst_addr =
+      blorp_wa_16020398787(isl_dev->info, &params->dst, &dst_array_index);
+
    blorp_emit(batch, GENX(XY_BLOCK_COPY_BLT), blt) {
       blt.ColorDepth = xy_color_depth(fmtl);
 
@@ -2041,7 +2084,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.DestinationY1 = dst_y0;
       blt.DestinationX2 = dst_x1;
       blt.DestinationY2 = dst_y1;
-      blt.DestinationBaseAddress = params->dst.addr;
+      blt.DestinationBaseAddress = dst_addr;
       blt.DestinationXOffset = params->dst.tile_x_sa;
       blt.DestinationYOffset = params->dst.tile_y_sa;
 
@@ -2050,8 +2093,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.DestinationSurfaceWidth = dst_surf->logical_level0_px.w - 1;
       blt.DestinationSurfaceHeight = dst_surf->logical_level0_px.h - 1;
       blt.DestinationSurfaceDepth = xy_bcb_surf_depth(dst_surf) - 1;
-      blt.DestinationArrayIndex =
-         params->dst.view.base_array_layer + params->dst.z_offset;
+      blt.DestinationArrayIndex = dst_array_index;
       blt.DestinationSurfaceQPitch = isl_get_qpitch(dst_surf) >> 2;
       blt.DestinationLOD = params->dst.view.base_level;
       blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
@@ -2082,7 +2124,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.SourcePitch = (src_surf->row_pitch_B / src_pitch_unit) - 1;
       blt.SourceMOCS = params->src.addr.mocs;
       blt.SourceTiling = xy_bcb_tiling(src_surf);
-      blt.SourceBaseAddress = params->src.addr;
+      blt.SourceBaseAddress = src_addr;
       blt.SourceXOffset = params->src.tile_x_sa;
       blt.SourceYOffset = params->src.tile_y_sa;
 
@@ -2091,8 +2133,7 @@ blorp_xy_block_copy_blt(struct blorp_batch *batch,
       blt.SourceSurfaceWidth = src_surf->logical_level0_px.w - 1;
       blt.SourceSurfaceHeight = src_surf->logical_level0_px.h - 1;
       blt.SourceSurfaceDepth = xy_bcb_surf_depth(src_surf) - 1;
-      blt.SourceArrayIndex =
-         params->src.view.base_array_layer + params->src.z_offset;
+      blt.SourceArrayIndex = src_array_index;
       blt.SourceSurfaceQPitch = isl_get_qpitch(src_surf) >> 2;
       blt.SourceLOD = params->src.view.base_level;
       blt.SourceMipTailStartLOD = src_surf->miptail_start_level;
@@ -2130,6 +2171,7 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
 #else
    UNUSED const struct isl_device *isl_dev = batch->blorp->isl_dev;
    const struct isl_surf *dst_surf = &params->dst.surf;
+   UNUSED const struct isl_surf *src_surf = &params->src.surf;
    const struct isl_format_layout *fmtl =
       isl_format_get_layout(params->dst.view.format);
 
@@ -2154,6 +2196,17 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
    struct isl_extent3d dst_align = isl_get_image_alignment(dst_surf);
 #endif
 
+   /* Wa_16020398787:
+    *
+    *    For Each submission of the Blit with a given array index,
+    *    base address needs to be shifted on the basis of array index using
+    *    qpitch and pitch.
+    */
+   uint32_t dst_array_index;
+   struct blorp_address dst_addr =
+      blorp_wa_16020398787(isl_dev->info, &params->dst, &dst_array_index);
+
+
    blorp_emit(batch, GENX(XY_FAST_COLOR_BLT), blt) {
       blt.ColorDepth = xy_color_depth(fmtl);
 
@@ -2163,7 +2216,7 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
       blt.DestinationY1 = params->y0;
       blt.DestinationX2 = params->x1;
       blt.DestinationY2 = params->y1;
-      blt.DestinationBaseAddress = params->dst.addr;
+      blt.DestinationBaseAddress = dst_addr;
       blt.DestinationXOffset = params->dst.tile_x_sa;
       blt.DestinationYOffset = params->dst.tile_y_sa;
 
@@ -2176,8 +2229,7 @@ blorp_xy_fast_color_blit(struct blorp_batch *batch,
       blt.DestinationSurfaceWidth = dst_surf->logical_level0_px.w - 1;
       blt.DestinationSurfaceHeight = dst_surf->logical_level0_px.h - 1;
       blt.DestinationSurfaceDepth = xy_bcb_surf_depth(dst_surf) - 1;
-      blt.DestinationArrayIndex =
-         params->dst.view.base_array_layer + params->dst.z_offset;
+      blt.DestinationArrayIndex = dst_array_index;
       blt.DestinationSurfaceQPitch = isl_get_qpitch(dst_surf) >> 2;
       blt.DestinationLOD = params->dst.view.base_level;
       blt.DestinationMipTailStartLOD = dst_surf->miptail_start_level;
