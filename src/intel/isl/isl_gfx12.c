@@ -249,6 +249,21 @@ isl_gfx125_choose_image_alignment_el(const struct isl_device *dev,
        */
       *image_align_el = isl_extent3d(32 * 8 / fmtl->bpb, 4, 1);
    }
+
+   /* From RENDER_SURFACE_STATE::SurfaceVerticalAlignment,
+    *
+    *     If a Tile4 subresource (i.e. MIP or array/volumetric slice) does not
+    *     start on an 8-row boundary on its monolithic surface, any Fast Clear
+    *     on the subresource must be aligned (in base and granularity) to 8-row
+    *     boundaries of the monolithic surface. The simplest way to avoid this
+    *     complication is to not use VALIGN_4.
+    *
+    * We choose VALIGN_8 instead.
+    */
+   if (dev->info->ver >= 20 && tiling == ISL_TILING_4
+         && !isl_surf_usage_is_depth(info->usage)
+         && !isl_surf_usage_is_stencil(info->usage))
+      image_align_el->h = 8;
 }
 
 void
