@@ -730,9 +730,6 @@ static bool
 want_hiz_wt_for_image(const struct intel_device_info *devinfo,
                       const struct anv_image *image)
 {
-   if (devinfo->ver >= 20)
-      return false;
-
    /* Gen12 only supports single-sampled while Gen20+ supports
     * multi-sampled images.
     */
