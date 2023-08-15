@@ -2517,6 +2517,10 @@ genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
    if (GFX_VER == 9 && (bits & ANV_PIPE_VF_CACHE_INVALIDATE_BIT))
       anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe);
 
+   /* Wa_14019039974 : Set “PSS Sync Stall” for all PIPE_CONTROLs. */
+   if (intel_needs_workaround(devinfo, 14019039974))
+      bits |= ANV_PIPE_PSS_STALL_SYNC_BIT;
+
    anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe) {
 #if GFX_VERx10 >= 125
       pipe.UntypedDataPortCacheFlushEnable =
