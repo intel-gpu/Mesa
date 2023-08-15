@@ -2333,6 +2333,25 @@ static void anv_emit_barrier_for_type(struct anv_cmd_buffer *cmd_buffer,
                                       struct GENX(RESOURCE_BARRIER_BODY) body,
                                       const enum GENX(RESOURCE_BARRIER_TYPE) type)
 {
+   /* Wa_14019039974 : After draw/mesh, if RESOURCE_BARRIER emitted, emit first:
+    *
+    * RESOURCE_BARRIER(Type: Immediate, Signal: Color, Wait: Pixel, Flush: None)
+    *
+    * Since the WA is A0 only, we do not track draw/mesh but just emit the
+    * extra barrier.
+    */
+   if (intel_needs_workaround(cmd_buffer->device->info, 14019039974)) {
+      struct GENX(RESOURCE_BARRIER_BODY) wa_body = {
+         .BarrierType = RESOURCE_BARRIER_TYPE_IMMEDIATE,
+         .SignalStage = RESOURCE_BARRIER_STAGE_COLOR,
+         .WaitStage = RESOURCE_BARRIER_STAGE_PIXEL,
+      };
+      anv_batch_emit(&cmd_buffer->batch,
+                  GENX(RESOURCE_BARRIER), barrier) {
+         barrier.ResourceBarrierBody = wa_body;
+      }
+   }
+
    body.BarrierType = type;
    anv_batch_emit(&cmd_buffer->batch,
                GENX(RESOURCE_BARRIER), barrier) {
@@ -3035,6 +3054,10 @@ genX(batch_emit_pipe_control_write)(struct anv_batch *batch,
        (bits & ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT))
       bits |= ANV_PIPE_CS_STALL_BIT;
 #endif
+
+   /* Wa_14019039974 : Set “PSS Sync Stall” for all PIPE_CONTROLs. */
+   if (intel_needs_workaround(devinfo, 14019039974))
+      bits |= ANV_PIPE_PSS_STALL_SYNC_BIT;
 
    anv_batch_emit(batch, GENX(PIPE_CONTROL), pipe) {
 #if GFX_VERx10 >= 125
