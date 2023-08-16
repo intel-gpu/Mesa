@@ -1345,6 +1345,8 @@ struct isl_device {
     */
    bool buffer_length_in_aux_addr;
 
+   uint64_t dummy_aux_address;
+
    void (*surf_fill_state_s)(const struct isl_device *dev, void *state,
                              const struct isl_surf_fill_state_info *restrict info);
 
