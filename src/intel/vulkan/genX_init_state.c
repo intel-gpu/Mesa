@@ -631,6 +631,13 @@ init_render_queue_state(struct anv_queue *queue, bool is_companion_rcs_batch)
    genX(emit_pipeline_select)(&batch, _3D, device);
 #endif
 
+#if INTEL_NEEDS_WA_14019857787
+   anv_batch_emit(&batch, GENX(3DSTATE_3D_MODE), p) {
+      p.EnableOOOreadsinRCPB = true;
+      p.EnableOOOreadsinRCPBMask = true;
+   }
+#endif
+
    anv_batch_emit(&batch, GENX(MI_BATCH_BUFFER_END), bbe);
 
    assert(batch.next <= batch.end);
