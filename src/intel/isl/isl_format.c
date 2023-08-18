@@ -882,10 +882,6 @@ bool
 isl_format_supports_ccs_e(const struct intel_device_info *devinfo,
                           enum isl_format format)
 {
-   /* Hack: temporarily disable ccs on xe2 */
-   if (devinfo->ver >= 20)
-      return false;
-
    if (!format_info_exists(format))
       return false;
 
