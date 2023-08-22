@@ -384,6 +384,24 @@ init_common_queue_state(struct anv_queue *queue, struct anv_batch *batch)
       cc1.MediaAndGPGPUPreemptionControlMask = 0x3;
    }
 
+   /* Wa_16020916187:
+    *
+    *    Disable mesh autostrip for Xe2 globally on platforms
+    *    that need this workaround.
+    *
+    *    TODO: Only disable mesh autostrip only when CPS shader
+    *          rate writes are active.
+    */
+#if GFX_VER == 20
+   if (intel_needs_workaround(device->info, 16020916187)) {
+      anv_perf_warn(VK_LOG_OBJS(&queue->vk.base), "Disabling mesh autostrip");
+      anv_batch_write_reg(batch, GENX(FF_MODE_SVGUNIT), svg) {
+         svg.MeshShaderAutostripDisable = true;
+         svg.MeshShaderPartialAutostripDisable = true;
+      }
+   }
+#endif
+
    state_system_mem_fence_address_emit(device, batch);
 }
 

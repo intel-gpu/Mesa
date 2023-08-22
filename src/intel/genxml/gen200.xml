@@ -1975,6 +1975,18 @@
   <register name="COMP_CTX0_TRTT_VA_RANGE" length="1" num="0x4584">
     <field name="TR-VA Base" dword="0" bits="12:0" type="uint" />
   </register>
+  <register name="FF_MODE_SVGUNIT" length="1" num="0x6210">
+    <field name="Mesh Shader Occlusion Query Disable" dword="0" bits="1:1" type="bool" />
+    <field name="TDS Tracking fifo wrap fix disable" dword="0" bits="2:2" type="bool" />
+    <field name="Mesh Shader Autostrip Disable" dword="0" bits="15:15" type="bool" />
+    <field name="Mesh Shader Partial Autostrip Disable" dword="0" bits="16:16" type="bool" />
+    <field name="TRI NOINSIDE Autostrip Cache Invalidate Disable" dword="0" bits="18:18" type="bool" />
+    <field name="Region Based Distribution Disable" dword="0" bits="19:19" type="bool" />
+    <field name="VS Hit Max Value" dword="0" bits="25:20" type="uint" />
+    <field name="DS Hit Max Value" dword="0" bits="29:26" type="uint" />
+    <field name="TDS external Cache Disable" dword="0" bits="30:30" type="bool" />
+    <field name="TE Autostrip Disable" dword="0" bits="31:31" type="bool" />
+  </register>
   <register name="GFX_TRTT_VA_RANGE" length="1" num="0x4404">
     <field name="TR-VA Base" dword="0" bits="12:0" type="uint" />
   </register>
