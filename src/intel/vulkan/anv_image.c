@@ -663,6 +663,10 @@ static bool
 want_hiz_wt_for_image(const struct intel_device_info *devinfo,
                       const struct anv_image *image)
 {
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(devinfo, 14019957668))
+      return false;
+
    /* Gen12 only supports single-sampled while Gen20+ supports
     * multi-sampled images.
     */
@@ -3488,6 +3492,10 @@ anv_can_fast_clear_color(const struct anv_cmd_buffer *cmd_buffer,
        clear_rect->rect.offset.y != 0 ||
        clear_rect->rect.extent.width != image->vk.extent.width ||
        clear_rect->rect.extent.height != image->vk.extent.height)
+      return false;
+
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(cmd_buffer->device->info, 14019957668))
       return false;
 
    /* We only allow fast clears to the first slice of an image (level 0,
