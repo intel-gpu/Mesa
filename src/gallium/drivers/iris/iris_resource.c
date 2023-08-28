@@ -677,6 +677,10 @@ static bool
 want_hiz_wt_for_res(const struct intel_device_info *devinfo,
                     const struct iris_resource *res)
 {
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(devinfo, 14019957668))
+      return false;
+
    /* Gen12 only supports single-sampled while Gen20+ supports
     * multi-sampled images.
     */
