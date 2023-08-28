@@ -1817,6 +1817,22 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
          SET(pse, ps_extra, PixelShaderKillsPixel);
       }
       genX(emit_wa_14018283232)(cmd_buffer);
+
+#if GFX_VER >= 20 && GFX_VER <= 30
+      const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
+      const bool cps_enable = wm_prog_data &&
+         brw_wm_prog_data_is_coarse(wm_prog_data, gfx->fs_msaa_flags);
+      /* Even if we could easily track the CPS state in the previously bound
+       * pipeline we would need to throw away the pipeline batch cache and
+       * process the pipeline state at every bond. So here always emitting the
+       * workaround when CPS is going to be disabled to avoid the hang.
+       */
+      if (intel_needs_workaround(device->info, 14019570772) && !cps_enable) {
+         genx_batch_emit_pipe_control(&cmd_buffer->batch, device->info,
+                                      cmd_buffer->state.current_pipeline,
+                                      ANV_PIPE_PSS_STALL_SYNC_BIT);
+      }
+#endif
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CLIP)) {
