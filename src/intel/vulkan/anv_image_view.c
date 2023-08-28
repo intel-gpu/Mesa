@@ -277,6 +277,10 @@ anv_can_fast_clear_color_view(struct anv_device *device,
        render_area.extent.height != iview->vk.extent.height)
       return false;
 
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(device->info, 14019957668))
+      return false;
+
    /* If the clear color is one that would require non-trivial format
     * conversion on resolve, we don't bother with the fast clear.  This
     * shouldn't be common as most clear colors are 0/1 and the most common
