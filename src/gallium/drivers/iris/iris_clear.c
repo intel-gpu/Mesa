@@ -42,6 +42,10 @@ iris_is_color_fast_clear_compatible(struct iris_context *ice,
    struct iris_batch *batch = &ice->batches[IRIS_BATCH_RENDER];
    const struct intel_device_info *devinfo = batch->screen->devinfo;
 
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(devinfo, 14019957668))
+      return false;
+
    if (isl_format_has_int_channel(format)) {
       perf_debug(&ice->dbg, "Integer fast clear not enabled for %s\n",
                  isl_format_get_name(format));
