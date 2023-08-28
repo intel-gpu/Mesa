@@ -730,6 +730,10 @@ static bool
 want_hiz_wt_for_image(const struct intel_device_info *devinfo,
                       const struct anv_image *image)
 {
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(devinfo, 14019957668))
+      return false;
+
    /* Gen12 only supports single-sampled while Gen20+ supports
     * multi-sampled images.
     */
@@ -3507,6 +3511,10 @@ anv_can_fast_clear_color_view(struct anv_device *device,
        render_area.offset.y != 0 ||
        render_area.extent.width != iview->vk.extent.width ||
        render_area.extent.height != iview->vk.extent.height)
+      return false;
+
+   /* Implement Wa_14019957668 by disabling fast clear */
+   if (intel_needs_workaround(device->info, 14019957668))
       return false;
 
    /* If the clear color is one that would require non-trivial format
