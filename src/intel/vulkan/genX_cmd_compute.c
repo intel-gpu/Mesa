@@ -292,6 +292,27 @@ get_interface_descriptor_data(struct anv_cmd_buffer *cmd_buffer,
    };
 }
 
+static void
+genX(emit_poll_flush)(struct anv_cmd_buffer *cmd_buffer)
+{
+#if GFX_VER == 20
+   if (!intel_needs_workaround(cmd_buffer->device->info, 16020183090))
+      return;
+
+   if (!cmd_buffer->state.needs_poll_flush)
+      return;
+
+   anv_batch_emit(&cmd_buffer->batch, GENX(MI_SEMAPHORE_WAIT), sem) {
+      sem.CompareOperation = COMPARE_SAD_EQUAL_SDD;
+      sem.RegisterPollMode = true;
+      sem.SemaphoreDataDword = 0x00000010;
+      sem.SemaphoreAddress = anv_address_from_u64(0xFFFFFFEF);
+   }
+
+   cmd_buffer->state.needs_poll_flush = false;
+#endif
+}
+
 static inline void
 emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
                              const struct anv_shader_bin *shader,
@@ -328,6 +349,9 @@ emit_indirect_compute_walker(struct anv_cmd_buffer *cmd_buffer,
                                        &dispatch),
    };
 
+   // WA 16020183090
+   genX(emit_poll_flush)(cmd_buffer);
+
    cmd_buffer->state.last_indirect_dispatch =
       anv_batch_emitn(
          &cmd_buffer->batch,
@@ -355,6 +379,9 @@ emit_compute_walker(struct anv_cmd_buffer *cmd_buffer,
    const struct intel_device_info *devinfo = pipeline->base.device->info;
    const struct intel_cs_dispatch_info dispatch =
       brw_cs_get_dispatch_info(devinfo, prog_data, NULL);
+
+   // WA 16020183090
+   genX(emit_poll_flush)(cmd_buffer);
 
    cmd_buffer->state.last_compute_walker =
       anv_batch_emitn(

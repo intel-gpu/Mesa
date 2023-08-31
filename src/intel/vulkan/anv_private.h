@@ -4016,6 +4016,11 @@ struct anv_cmd_state {
     * Sync" field for utrace timestamp emission.
     */
    void                                        *last_indirect_dispatch;
+
+   /**
+    * boolean to toggle for WA 16020183090
+    */
+   bool needs_poll_flush;
 };
 
 #define ANV_MIN_CMD_BUFFER_BATCH_SIZE 8192
