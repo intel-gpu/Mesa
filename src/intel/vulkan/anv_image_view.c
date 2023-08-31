@@ -354,6 +354,26 @@ anv_can_fast_clear_color_view(struct anv_device *device,
                                     iview->planes[0].isl.format))
       return false;
 
+   /**
+    * WA_22018390030:
+    *    Disable fast clears on subresources aligned to VALIGN4
+    */
+#if INTEL_NEEDS_WA_22018390030
+   const struct isl_surf primary_surf =
+      &iview->image->planes[0].primary_surface.isl;
+   const struct isl_extent3d image_align =
+      isl_get_image_alignment(primary_surf);
+   const uint8_t alignment = isl_encode_valign(image_align.height);
+   if (intel_needs_workaround(device->info, 22018390030) &&
+       !isl_surf_usage_is_depth(primary.usage) &&
+       !isl_surf_usage_is_stencil(primary.usage) &&
+       alignment == VALIGN_4) {
+         anv_perf_warn(VK_LOG_OBJS(&iview->image->vk.base),
+                       "Disable fast clears due to WA 22018390030");
+         return false;
+       }
+#endif
+
    return true;
 }
 
