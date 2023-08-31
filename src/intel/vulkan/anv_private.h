@@ -3920,6 +3920,11 @@ struct anv_cmd_state {
     * A buffer used for spill/fill of ray queries.
     */
    struct anv_bo *                              ray_query_shadow_bo;
+
+   /**
+    * boolean to toggle for WA 16020183090
+    */
+   bool needs_poll_flush;
 };
 
 #define ANV_MIN_CMD_BUFFER_BATCH_SIZE 8192

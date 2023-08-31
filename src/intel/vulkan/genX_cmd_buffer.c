@@ -2430,6 +2430,27 @@ anv_resource_barrier_wait_stage(const struct anv_cmd_buffer *cmd_buffer,
    return wait_stage;
 }
 
+static void
+genX(apply_wa_16020183090)(struct anv_cmd_buffer *cmd_buffer,
+                                    struct GENX(RESOURCE_BARRIER_BODY) *body)
+{
+#if GFX_VER == 20
+   if (!intel_needs_workaround(cmd_buffer->device->info, 16020183090))
+      return;
+
+   const enum GENX(RESOURCE_BARRIER_STAGE) wa_stages =
+      RESOURCE_BARRIER_STAGE_RASTER |
+      RESOURCE_BARRIER_STAGE_DEPTH |
+      RESOURCE_BARRIER_STAGE_COLOR |
+      RESOURCE_BARRIER_STAGE_PIXEL;
+
+   if (body->WaitStage & wa_stages)
+      body->SignalStage = RESOURCE_BARRIER_STAGE_GPGPU;
+
+   cmd_buffer->state.needs_poll_flush = true;
+#endif
+}
+
 static void anv_emit_barrier_for_type(struct anv_cmd_buffer *cmd_buffer,
                                       struct GENX(RESOURCE_BARRIER_BODY) body,
                                       const enum GENX(RESOURCE_BARRIER_TYPE) type)
@@ -2479,6 +2500,8 @@ static void anv_add_resource_barrier_pair(struct anv_cmd_buffer *cmd_buffer,
       anv_resource_barrier_signal_stage(cmd_buffer, srcStageMask);
    body.WaitStage =
       anv_resource_barrier_wait_stage(cmd_buffer, dstStageMask);
+
+   genX(apply_wa_16020183090)(cmd_buffer, &body);
 
    anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_WAIT);
    anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_SIGNAL);
@@ -4733,6 +4756,7 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          body.SignalStage =
             anv_resource_barrier_signal_stage(cmd_buffer,
                                               img_barrier->srcStageMask);
+         genX(apply_wa_16020183090)(cmd_buffer, &body);
          anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_WAIT);
 #endif // GFX_VER >= 20
       }
@@ -4846,6 +4870,7 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          body.SignalStage =
             anv_resource_barrier_signal_stage(cmd_buffer,
                                               img_barrier->srcStageMask);
+         genX(apply_wa_16020183090)(cmd_buffer, &body);
          anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_SIGNAL);
 #endif // GFX_VER >= 20
       }
