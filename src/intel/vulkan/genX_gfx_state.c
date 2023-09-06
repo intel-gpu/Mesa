@@ -696,6 +696,12 @@ calculate_tile_dimensions(const struct anv_device *device,
    }                                                                   \
 
 ALWAYS_INLINE static void
+set_wa_14018283232(struct anv_gfx_dynamic_state *hw_state)
+{
+   SET(WA_14018283232, wa_14018283232_toggle, true);
+}
+
+ALWAYS_INLINE static void
 update_fs_msaa_flags(struct anv_gfx_dynamic_state *hw_state,
                      const struct vk_dynamic_graphics_state *dyn,
                      const struct anv_graphics_pipeline *pipeline)
@@ -1267,6 +1273,7 @@ update_depth_bounds(struct anv_gfx_dynamic_state *hw_state,
    if (dyn->ds.depth.bounds_test.enable) {
       SET(DEPTH_BOUNDS, db.DepthBoundsTestMinValue, dyn->ds.depth.bounds_test.min);
       SET(DEPTH_BOUNDS, db.DepthBoundsTestMaxValue, dyn->ds.depth.bounds_test.max);
+      set_wa_14018283232(hw_state);
    }
 }
 
