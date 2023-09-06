@@ -447,6 +447,36 @@ calculate_tile_dimensions(struct anv_cmd_buffer *cmd_buffer,
 }
 #endif
 
+/* Wa_14018283232: Send a resource barrier when DepthBoundsTestEnable
+ * changes.
+ */
+static void
+genX(emit_wa_14018283232)(struct anv_cmd_buffer *cmd_buffer)
+{
+#if INTEL_NEEDS_WA_14018283232
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
+   if (!intel_needs_workaround(devinfo, 14018283232))
+      return;
+
+   if (INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+      struct GENX(RESOURCE_BARRIER_BODY) wa_body = {
+         .BarrierType = RESOURCE_BARRIER_TYPE_IMMEDIATE,
+         .SignalStage = RESOURCE_BARRIER_STAGE_COLOR,
+         .WaitStage = RESOURCE_BARRIER_STAGE_PIXEL,
+      };
+
+      anv_batch_emit(&cmd_buffer->batch,
+                     GENX(RESOURCE_BARRIER), barrier) {
+         barrier.ResourceBarrierBody = wa_body;
+      }
+   } else {
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_CS_STALL_BIT, "Wa_14018283232");
+
+   }
+#endif
+}
+
 /**
  * This function takes the vulkan runtime values & dirty states and updates
  * the values in anv_gfx_dynamic_state, flagging HW instructions for
@@ -980,6 +1010,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       if (dyn->ds.depth.bounds_test.enable) {
          SET(DEPTH_BOUNDS, db.DepthBoundsTestMinValue, dyn->ds.depth.bounds_test.min);
          SET(DEPTH_BOUNDS, db.DepthBoundsTestMaxValue, dyn->ds.depth.bounds_test.max);
+         genX(emit_wa_14018283232)(cmd_buffer);
       }
    }
 #endif
