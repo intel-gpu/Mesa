@@ -2773,6 +2773,13 @@ isl_surf_init_s(const struct isl_device *dev,
    if (!isl_surf_choose_tiling(dev, info, &tiling))
       return false;
 
+   /* WA 15012495196:
+    * Ensure that we're using X tiling for protected surfaces
+    */
+   if (intel_needs_workaround(dev->info, 15012495196) &&
+       info->usage & ISL_SURF_USAGE_PROTECTED_BIT)
+      assert(tiling == ISL_TILING_X);
+
    const enum isl_dim_layout dim_layout =
       isl_surf_choose_dim_layout(dev, info->dim, tiling, info->usage);
 
