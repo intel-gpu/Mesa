@@ -1378,6 +1378,30 @@ void gfx6_math(struct brw_codegen *p,
 	       struct brw_reg src1)
 {
    const struct intel_device_info *devinfo = p->devinfo;
+
+   /* Wa_22016140776:
+   *
+   * Scalar broadcast on HF math (packed or unpacked) must not be used.
+   * Compiler must use a mov instruction to expand the scalar value to a
+   * vector before using in a HF (packed or unpacked) math operation.
+   */
+   if (intel_needs_workaround(devinfo, 22016140776) &&
+       has_scalar_region(src0) && src0.type == BRW_TYPE_HF) {
+      struct tgl_swsb swsb = brw_get_default_swsb(p);
+      struct brw_reg new_src =
+         retype(brw_vec1_reg(src0.file, src0.nr, src0.subnr),
+                BRW_TYPE_HF);
+      brw_push_insn_state(p);
+      brw_set_default_exec_size(p, BRW_EXECUTE_1);
+      brw_set_default_mask_control(p, BRW_MASK_DISABLE);
+      brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
+      brw_set_default_swsb(p, tgl_swsb_src_dep(swsb));
+      brw_MOV(p, new_src, src0);
+      src0 = new_src;
+      brw_pop_insn_state(p);
+      brw_set_default_swsb(p, tgl_swsb_dst_dep(swsb, 1));
+   }
+
    brw_inst *insn = next_insn(p, BRW_OPCODE_MATH);
 
    assert(dest.file == BRW_GENERAL_REGISTER_FILE);
