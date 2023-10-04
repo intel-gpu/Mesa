@@ -197,6 +197,8 @@ struct brw_nir_lower_storage_image_opts {
 bool brw_nir_lower_storage_image(nir_shader *nir,
                                  const struct brw_nir_lower_storage_image_opts *opts);
 
+bool brw_nir_lower_sample_index_in_coord(nir_shader *nir);
+
 bool brw_nir_lower_texel_address(nir_shader *shader,
                                  const struct intel_device_info *devinfo,
                                  enum isl_tiling tiling);

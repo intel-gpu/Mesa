@@ -374,6 +374,5 @@ brw_nir_lower_storage_image(nir_shader *shader,
                                             brw_nir_lower_storage_image_instr,
                                             nir_metadata_none,
                                             (void *)opts);
-
    return progress;
 }
