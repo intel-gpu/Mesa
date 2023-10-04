@@ -2383,7 +2383,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
    device->instance = instance;
 
-   device->enable_tbimr = instance->enable_tbimr;
+   device->enable_tbimr = devinfo.verx10 == 125 && instance->enable_tbimr;
 
    assert(strlen(path) < ARRAY_SIZE(device->path));
    snprintf(device->path, ARRAY_SIZE(device->path), "%s", path);
