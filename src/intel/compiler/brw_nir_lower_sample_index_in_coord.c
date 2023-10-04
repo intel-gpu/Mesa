@@ -78,10 +78,7 @@ lower_image_sample_index_in_coord_instr(nir_builder *b,
 bool
 brw_nir_lower_sample_index_in_coord(nir_shader *shader)
 {
-   bool progress = false;
-   progress |=
-      nir_shader_instructions_pass(shader,
-                                   lower_image_sample_index_in_coord_instr,
-                                   nir_metadata_none, NULL);
-   return progress;
+   return nir_shader_instructions_pass(shader,
+                                       lower_image_sample_index_in_coord_instr,
+                                       nir_metadata_none, NULL);
 }
