@@ -378,6 +378,15 @@ init_render_queue_state(struct anv_queue *queue, bool is_companion_rcs_batch)
 
    genX(emit_pipeline_select)(&batch, _3D, device);
 
+#if INTEL_WA_18033852989_GFX_VER
+   if (intel_needs_workaround(device->info, 18020603990)) {
+      anv_batch_write_reg(&batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
+         c1.DisableBottomClipRectangletest = true;
+         c1.DisableBottomClipRectangletestMask = true;
+      }
+   }
+#endif
+
 #if GFX_VER == 9
    anv_batch_write_reg(&batch, GENX(CACHE_MODE_1), cm1) {
       cm1.FloatBlendOptimizationEnable = true;
