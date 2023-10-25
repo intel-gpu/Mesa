@@ -1203,6 +1203,15 @@ iris_init_common_context(struct iris_batch *batch)
       reg.CrossTilePartialWriteMergeEnable = true;
    }
 #endif
+
+#if INTEL_WA_18033852989_GFX_VER
+   if (intel_needs_workaround(batch->screen->devinfo, 18020603990)) {
+      iris_emit_reg(batch, GENX(COMMON_SLICE_CHICKEN1), reg) {
+         reg.DisableBottomClipRectangletest = true;
+         reg.DisableBottomClipRectangletestMask = true;
+      }
+   }
+#endif
 }
 
 static void
