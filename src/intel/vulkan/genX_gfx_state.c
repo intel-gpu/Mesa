@@ -1463,7 +1463,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
    if ((cmd_buffer->state.gfx.dirty & ANV_CMD_DIRTY_RENDER_TARGETS)) {
       unsigned fb_width, fb_height, tile_width, tile_height;
 
-      if (cmd_buffer->device->physical->instance->enable_tbimr &&
+      if (cmd_buffer->device->physical->enable_tbimr &&
           calculate_render_area(cmd_buffer, &fb_width, &fb_height) &&
           calculate_tile_dimensions(cmd_buffer, fb_width, fb_height,
                                     &tile_width, &tile_height)) {

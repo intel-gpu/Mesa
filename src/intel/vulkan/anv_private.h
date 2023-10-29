@@ -1081,6 +1081,8 @@ struct anv_physical_device {
      */
     bool                                         alloc_aux_tt_mem;
 
+    bool                                        enable_tbimr;
+
     /**
      * True if the descriptors buffers are holding one of the following :
      *    - anv_sampled_image_descriptor
