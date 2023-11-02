@@ -78,6 +78,7 @@ can_fast_clear_color(struct iris_context *ice,
    const struct intel_device_info *devinfo =
       ((struct iris_screen *)ice->ctx.screen)->devinfo;
    struct iris_resource *res = (void *) p_res;
+   struct iris_batch *batch = &ice->batches[IRIS_BATCH_RENDER];
 
    if (INTEL_DEBUG(DEBUG_NO_FAST_CLEAR))
       return false;
@@ -156,6 +157,21 @@ can_fast_clear_color(struct iris_context *ice,
           res->surf.logical_level0_px.h <= 256)
          return false;
    }
+
+   /**
+    * WA_22018390030:
+    *    Disable fast clears on subresources aligned to VALIGN4
+    */
+#if INTEL_NEEDS_WA_22018390030
+   const struct isl_extent3d image_align =
+      isl_get_image_alignment(res->surf);
+   const uint8_t alignment = isl_encode_valign(image_align.height);
+
+   if (intel_needs_workaround(devinfo, 22018390030) && alignment == VALIGN_4) {
+      perf_debug("WA 22018390030: Disabling fast clears for VALIGN_4 resources");
+      return false;
+   }
+#endif
 
    /* On gfx12.0, CCS fast clears don't seem to cover the correct portion of
     * the aux buffer when the pitch is not 512B-aligned.
