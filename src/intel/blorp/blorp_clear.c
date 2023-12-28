@@ -408,6 +408,18 @@ blorp_fast_clear(struct blorp_batch *batch,
    params.num_layers = num_layers;
    assert((batch->flags & BLORP_BATCH_USE_COMPUTE) == 0);
 
+   /* Wa_16021232440(Wa_14020089804, Wa_1402445958) - On detecting the surface
+    * with height as 16k, split it into 2 fast clears with height=8k.
+    */
+   if (intel_needs_workaround(batch->blorp->isl_dev->info, 16021232440) &&
+       (y0 == 0 && y1 == 16384)) {
+      blorp_fast_clear(batch, surf, format, swizzle, level, start_layer,
+		       num_layers, x0, 0, x1, 8192);
+      blorp_fast_clear(batch, surf, format, swizzle, level, start_layer,
+		       num_layers, x0, 8192, x1, 16384);
+      return;
+   }
+
    params.x0 = x0;
    params.y0 = y0;
    params.x1 = x1;
