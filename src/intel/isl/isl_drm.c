@@ -249,12 +249,20 @@ isl_drm_modifier_get_score(const struct intel_device_info *devinfo,
       if (!intel_device_info_is_dg2(devinfo))
          return 0;
 
+      if (devinfo->prelim_drm &&
+          (modifier == I915_FORMAT_MOD_4_TILED_DG2_RC_CCS))
+         return 0;
+
       if (INTEL_DEBUG(DEBUG_NO_CCS))
          return 0;
 
       return 4;
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       if (!intel_device_info_is_dg2(devinfo))
+         return 0;
+
+      if (devinfo->prelim_drm &&
+          (modifier == I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC))
          return 0;
 
       if (INTEL_DEBUG(DEBUG_NO_CCS) || INTEL_DEBUG(DEBUG_NO_FAST_CLEAR))
