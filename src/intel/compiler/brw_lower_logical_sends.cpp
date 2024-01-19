@@ -1829,6 +1829,13 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
       unreachable("Unknown surface logical instruction");
    }
 
+   /* DCE pass might end up omitting the writes and make the destination as ARF
+    * null, so we really can't rely on the intermediate pass to set the
+    * destination register size properly.
+    */
+   if (!has_dest)
+      inst->size_written = 0;
+
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
    inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, inst->exec_size * dims.ud);
@@ -1839,9 +1846,9 @@ lower_lsc_surface_logical_send(const fs_builder &bld, fs_inst *inst)
    inst->send_ex_bso = surf_type == LSC_ADDR_SURFTYPE_BSS &&
                        compiler->extended_bindless_surface_offset;
    assert(inst->size_written ==
-          !has_dest ? 0 :
-          lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
-                           inst->exec_size * num_components) * REG_SIZE);
+          (!has_dest ? 0 :
+           lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
+                            inst->exec_size * num_components) * REG_SIZE));
 
    inst->resize_sources(4);
 
@@ -1921,8 +1928,8 @@ lower_lsc_block_logical_send(const fs_builder &bld, fs_inst *inst)
 
    inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A32, 1);
    assert(inst->size_written ==
-          write ? 0 :
-          lsc_msg_dest_len(devinfo, LSC_DATA_SIZE_D32, arg.ud) * REG_SIZE);
+          (write ? 0 :
+           lsc_msg_dest_len(devinfo, LSC_DATA_SIZE_D32, arg.ud) * REG_SIZE));
    inst->exec_size = 1;
    inst->ex_mlen = write ? DIV_ROUND_UP(arg.ud, 8) : 0;
    inst->header_size = 0;
@@ -2174,6 +2181,13 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
    if (bld.shader->stage == MESA_SHADER_FRAGMENT)
       emit_fragment_mask(bld, inst);
 
+   /* DCE pass might end up omitting the writes and make the destination as ARF
+    * null, so we really can't rely on the intermediate pass to set the
+    * destination register size properly.
+    */
+   if (!has_dest)
+      inst->size_written = 0;
+
    /* Update the original instruction. */
    inst->opcode = SHADER_OPCODE_SEND;
    inst->mlen = lsc_msg_addr_len(devinfo, LSC_ADDR_SIZE_A64, inst->exec_size);
@@ -2183,9 +2197,9 @@ lower_lsc_a64_logical_send(const fs_builder &bld, fs_inst *inst)
    inst->send_is_volatile = !has_side_effects;
 
    assert(inst->size_written ==
-          !has_dest ? 0 :
-          lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
-                           inst->exec_size * num_components) * REG_SIZE);
+          (!has_dest ? 0 :
+           lsc_msg_dest_len(devinfo, lsc_msg_desc_data_size(devinfo, inst->desc),
+                            inst->exec_size * num_components) * REG_SIZE));
 
    /* Set up SFID and descriptors */
    inst->sfid = GFX12_SFID_UGM;
