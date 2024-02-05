@@ -1420,6 +1420,10 @@
     <field name="Destination Depth/Stencil Resource" start="498" end="498" type="bool" />
     <field name="Destination Array Index" start="501" end="511" type="uint" />
   </instruction>
+  <register name="COMMON_SLICE_CHICKEN1" length="1" num="0x7010">
+    <field name="Disable Bottom Clip Rectangle test" start="14" end="14" type="bool" />
+    <field name="Disable Bottom Clip Rectangle test Mask" start="30" end="30" type="bool" />
+  </register>
   <register name="FF_MODE_SVGUNIT" length="1" num="0x6210">
     <field name="Mesh Shader Occlusion Query Disable" start="1" end="1" type="bool" />
     <field name="TDS Tracking fifo wrap fix disable" start="2" end="2" type="bool" />
