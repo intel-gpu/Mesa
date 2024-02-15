@@ -321,7 +321,7 @@ brw_nir_lower_cs_intrinsics(nir_shader *nir,
       }
    }
 
-   if (devinfo->verx10 >= 125 && prog_data &&
+   if (devinfo->ver < 20 && devinfo->verx10 >= 125 && prog_data &&
        nir->info.stage == MESA_SHADER_COMPUTE &&
        nir->info.cs.derivative_group != DERIVATIVE_GROUP_QUADS &&
        !nir->info.workgroup_size_variable &&
