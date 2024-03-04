@@ -394,7 +394,21 @@ brw_fs_get_lowered_simd_width(const fs_visitor *shader, const fs_inst *inst)
    case SHADER_OPCODE_TYPED_ATOMIC_LOGICAL:
    case SHADER_OPCODE_TYPED_SURFACE_READ_LOGICAL:
    case SHADER_OPCODE_TYPED_SURFACE_WRITE_LOGICAL:
-      return devinfo->ver < 20 ? 8 : inst->exec_size;
+      assert(devinfo->ver < 20 || inst->exec_size >= 16);
+      if (devinfo->ver >= 20) {
+         /* Xe does not support load/store's on the TGM
+          * Xe2+: BSpec 63970
+          *
+          * Loads with vector size of 8 or more is restricted to
+          * EXEC_MASK <= 16
+          */
+         if (lsc_msg_desc_vect_size(devinfo, inst->desc) >= LSC_VECT_SIZE_V8)
+            return MIN2(16, inst->exec_size);
+         else
+            return inst->exec_size;
+      } else {
+         return 8;
+      }
 
    case SHADER_OPCODE_UNTYPED_ATOMIC_LOGICAL:
    case SHADER_OPCODE_UNTYPED_SURFACE_READ_LOGICAL:
@@ -407,9 +421,19 @@ brw_fs_get_lowered_simd_width(const fs_visitor *shader, const fs_inst *inst)
    case SHADER_OPCODE_A64_UNTYPED_READ_LOGICAL:
    case SHADER_OPCODE_A64_BYTE_SCATTERED_WRITE_LOGICAL:
    case SHADER_OPCODE_A64_BYTE_SCATTERED_READ_LOGICAL:
-      return devinfo->ver < 20 ?
-             MIN2(16, inst->exec_size) :
-             inst->exec_size;
+      if (devinfo->ver >= 20) {
+         /* Xe2+: BSpec 63970
+          *
+          * Loads with vector size of 8 or more is restricted to
+          * EXEC_MASK <= 16
+          */
+         if (lsc_msg_desc_vect_size(devinfo, inst->desc) >= LSC_VECT_SIZE_V8)
+            return MIN2(16, inst->exec_size);
+         else
+            return inst->exec_size;
+      } else {
+         return MIN2(16, inst->exec_size);
+      }
 
    case SHADER_OPCODE_A64_OWORD_BLOCK_READ_LOGICAL:
    case SHADER_OPCODE_A64_UNALIGNED_OWORD_BLOCK_READ_LOGICAL:
