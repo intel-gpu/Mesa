@@ -381,8 +381,18 @@ brw_get_lowered_simd_width(const brw_shader *shader, const brw_inst *inst)
    case SHADER_OPCODE_MEMORY_LOAD_LOGICAL:
    case SHADER_OPCODE_MEMORY_STORE_LOGICAL:
    case SHADER_OPCODE_MEMORY_ATOMIC_LOGICAL:
-      if (devinfo->ver >= 20)
-         return inst->exec_size;
+      if (devinfo->ver >= 20) {
+         /* Xe does not support load/store's on the TGM
+          * Xe2+: BSpec 63970
+          *
+          * Loads with vector size of 8 or more is restricted to
+          * EXEC_MASK <= 16
+          */
+         if (lsc_msg_desc_vect_size(devinfo, inst->desc) >= LSC_VECT_SIZE_V8)
+            return MIN2(16, inst->exec_size);
+         else
+            return inst->exec_size;
+      }
 
       if (inst->src[MEMORY_LOGICAL_MODE].ud == MEMORY_MODE_TYPED)
          return 8;
