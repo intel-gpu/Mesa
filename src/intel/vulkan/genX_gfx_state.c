@@ -942,6 +942,7 @@ update_ps_extra_kills_pixel(struct anv_gfx_dynamic_state *hw_state,
                        (has_ds_feedback_loop(&fs_bin->bind_map, dyn) ||
                         wm_prog_data->uses_kill),
                        FRAGMENT);
+   set_wa_14018283232(hw_state);
 }
 
 #if GFX_VERx10 >= 125
@@ -2518,6 +2519,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
          SET(pse, ps_extra, EnablePSDependencyOnCPsizeChange);
 #endif
       }
+      set_wa_14018283232(hw_state);
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CLIP)) {
