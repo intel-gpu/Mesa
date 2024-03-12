@@ -1071,6 +1071,7 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
                                  has_ds_feedback_loop(dyn) ||
                                  wm_prog_data->uses_kill),
                 FRAGMENT);
+      genX(emit_wa_14018283232)(cmd_buffer);
    }
 
    if ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
@@ -1780,6 +1781,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 #endif
          SET(pse, ps_extra, PixelShaderKillsPixel);
       }
+      genX(emit_wa_14018283232)(cmd_buffer);
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_CLIP)) {
