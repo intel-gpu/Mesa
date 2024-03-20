@@ -5365,6 +5365,9 @@ anv_image_get_fast_clear_type_addr(const struct anv_device *device,
    struct anv_address addr =
       anv_image_get_clear_color_addr(device, image, aspect);
 
+   if (anv_address_is_null(addr))
+      return addr;
+
    unsigned clear_color_state_size;
    if (device->info->ver >= 11) {
       /* The fast clear type and the first compression state are stored in the
