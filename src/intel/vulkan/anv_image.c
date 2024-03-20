@@ -623,6 +623,12 @@ add_aux_state_tracking_buffer(struct anv_device *device,
                               uint64_t state_offset,
                               uint32_t plane)
 {
+   /* Indirect clear color feature has been removed since Xe2. Tracking
+    * compression state in this buffer is not needed either.
+    */
+   if (device->info->ver >= 20)
+      return VK_SUCCESS;
+
    assert(image && device);
    assert(image->planes[plane].aux_usage != ISL_AUX_USAGE_NONE &&
           image->vk.aspects & (VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV |
