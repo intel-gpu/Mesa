@@ -1076,21 +1076,23 @@ general_restrictions_on_region_parameters(const struct brw_isa_info *isa,
       /* VertStride must be used to cross GRF register boundaries. This rule
        * implies that elements within a 'Width' cannot cross GRF boundaries.
        */
-      const uint64_t mask = (1ULL << element_size) - 1;
       unsigned rowbase = subreg;
 
       for (int y = 0; y < exec_size / width; y++) {
-         uint64_t access_mask = 0;
+         uint64_t grfs_accessed = 0;
          unsigned offset = rowbase;
 
          for (int x = 0; x < width; x++) {
-            access_mask |= mask << (offset % 64);
+            const unsigned start_grf = (offset / REG_SIZE) % 64;
+            const unsigned end_byte = offset + (element_size - 1);
+            const unsigned end_grf = (end_byte / REG_SIZE) % 64;
+            grfs_accessed |= (1ULL << start_grf) | (1ULL << end_grf);
             offset += hstride * element_size;
          }
 
          rowbase += vstride * element_size;
 
-         if ((uint32_t)access_mask != 0 && (access_mask >> 32) != 0) {
+         if (util_bitcount(grfs_accessed) > 1) {
             ERROR("VertStride must be used to cross GRF register boundaries");
             break;
          }
