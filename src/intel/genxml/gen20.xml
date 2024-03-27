@@ -867,8 +867,7 @@
       <value name="StackIDs 512" value="2" />
       <value name="StackIDs 256" value="3" />
     </field>
-    <field name="Number of Walkers" start="99" end="101" type="uint" />
-    <field name="Fused EU Dispatch" start="102" end="102" type="bool" />
+    <field name="Compute Dispatch All walker Enable" start="108" end="108" type="bool" />
     <field name="Single Slice Dispatch CCS Mode" start="109" end="109" type="bool" />
     <field name="Over Dispatch Control" start="110" end="111" type="uint">
       <value name="Over Dispatch None" value="0" />
