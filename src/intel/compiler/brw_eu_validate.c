@@ -1405,7 +1405,7 @@ region_alignment_rules(const struct brw_isa_info *isa,
       brw_opcode_desc(isa, brw_inst_opcode(isa, inst));
    unsigned num_sources = brw_num_sources_from_inst(isa, inst);
    unsigned exec_size = 1 << brw_inst_exec_size(devinfo, inst);
-   uint64_t dst_access_mask[32], src0_access_mask[32], src1_access_mask[32];
+   uint64_t dst_access_mask[32], unused_access_mask[32];
    struct string error_msg = { .str = NULL, .len = 0 };
 
    if (num_sources == 3)
@@ -1418,8 +1418,6 @@ region_alignment_rules(const struct brw_isa_info *isa,
       return (struct string){};
 
    memset(dst_access_mask, 0, sizeof(dst_access_mask));
-   memset(src0_access_mask, 0, sizeof(src0_access_mask));
-   memset(src1_access_mask, 0, sizeof(src1_access_mask));
 
    for (unsigned i = 0; i < num_sources; i++) {
       unsigned vstride, width, hstride, element_size, subreg;
@@ -1444,7 +1442,7 @@ region_alignment_rules(const struct brw_isa_info *isa,
       type = brw_inst_src ## n ## _type(devinfo, inst);                        \
       element_size = brw_type_size_bytes(type);                                \
       subreg = brw_inst_src ## n ## _da1_subreg_nr(devinfo, inst);             \
-      align1_access_mask(src ## n ## _access_mask,                             \
+      align1_access_mask(unused_access_mask,                                   \
                          exec_size, element_size, subreg,                      \
                          vstride, width, hstride)
 
