@@ -614,8 +614,10 @@ void brw_shader_phase_update(fs_visitor &s, enum brw_shader_phase phase);
 
 #ifndef NDEBUG
 void brw_fs_validate(const fs_visitor &s);
+void brw_fs_validate_late(const fs_visitor &s);
 #else
 static inline void brw_fs_validate(const fs_visitor &s) {}
+void brw_fs_validate_late(const fs_visitor &s) {}
 #endif
 
 void brw_calculate_cfg(fs_visitor &s);
