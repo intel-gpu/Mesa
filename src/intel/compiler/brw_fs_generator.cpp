@@ -759,6 +759,8 @@ fs_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                             struct brw_compile_stats *stats,
                             unsigned max_polygons)
 {
+   brw_fs_validate_late(*cfg->s);
+
    /* align to 64 byte boundary. */
    brw_realign(p, 64);
 

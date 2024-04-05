@@ -590,8 +590,10 @@ void nir_to_brw(fs_visitor *s);
 
 #ifndef NDEBUG
 void brw_fs_validate(const fs_visitor &s);
+void brw_fs_validate_late(const fs_visitor &s);
 #else
 static inline void brw_fs_validate(const fs_visitor &s) {}
+void brw_fs_validate_late(const fs_visitor &s) {}
 #endif
 
 void brw_fs_optimize(fs_visitor &s);
