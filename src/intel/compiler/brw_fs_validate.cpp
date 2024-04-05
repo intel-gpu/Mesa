@@ -227,4 +227,150 @@ brw_fs_validate(const fs_visitor &s)
       }
    }
 }
+
+static void
+brw_fs_validate_register_region_special_restrictions(const fs_visitor &s)
+{
+   const intel_device_info *devinfo = s.devinfo;
+
+   foreach_block_and_inst (block, fs_inst, inst, s.cfg) {
+      /* "Src0 Restrictions" in "Special Restrictions" in Bspec 56640. */
+      if (devinfo->ver >= 20 &&
+          inst->sources > 0 &&
+          (inst->src[0].file == FIXED_GRF || inst->src[0].file == ARF)) {
+         brw_reg &src0 = inst->src[0];
+         brw_reg &dst  = inst->dst;
+
+         const unsigned v = 1 << (MAX2(src0.vstride, 1) - 1);
+         const unsigned w = 1 << src0.width;
+         const unsigned h = 1 << (MAX2(src0.hstride, 1) - 1);
+
+         /* TODO: Handle usage of address register once is available in the backend IR. */
+         const bool is_Vx1 = false;
+         const bool is_VxH = false;
+
+         const unsigned src0_stride         = w == 1 ? v : h;
+         const unsigned src0_uniform_stride = (w == 1) || (h * w == v) || is_Vx1;
+         const unsigned dst_stride          = dst.hstride;
+
+         const unsigned src0_size = brw_type_size_bytes(src0.type);
+         const unsigned dst_size = brw_type_size_bytes(dst.type);
+         const bool dst_dword_aligned = (dst_size >= 4) ||
+                                        (dst_size == 2 && (dst.subnr % 2 == 0)) ||
+                                        (dst_size == 1 && (dst.subnr % 4 == 0));
+
+         /* The section below follows the pseudo-code in the spec to make
+          * easier to verify.
+          */
+         bool allowed = false;
+         if ((dst_size >= 4) ||
+             (src0_size >= 4) ||
+             (dst_size == 2 && dst_stride > 1) ||
+             (dst_size == 1 && dst_stride > 2) ||
+             is_VxH) {
+            /* One element per DWord channel. */
+            allowed = true;
+
+         } else if (src0_uniform_stride || dst_dword_aligned) {
+            if (src0_size == 2 && dst_size == 2) {
+               if ((src0_stride < 2) ||
+                   (src0_stride == 2 && src0_uniform_stride && (dst.subnr % 16 == src0.subnr / 2)))
+                  allowed = true;
+
+            } else if (src0_size == 2 && dst_size == 1 && dst_stride == 2) {
+               if ((src0_stride < 2) ||
+                   (src0_stride == 2 && src0_uniform_stride && (dst.subnr % 32 == src0.subnr)))
+                  allowed = true;
+
+            } else if (src0_size == 1 && dst_size == 2) {
+               if ((src0_stride < 4) ||
+                   (src0_stride == 4 && src0_uniform_stride && ((2 * dst.subnr) % 16 == src0.subnr / 2)) ||
+                   (src0_stride == 8 && src0_uniform_stride && ((2 * dst.subnr) % 8 == src0.subnr / 4)))
+                  allowed = true;
+
+            } else if (src0_size == 1 && dst_size == 1 && dst_stride == 2) {
+               if ((src0_stride < 4) ||
+                   (src0_stride == 4 && src0_uniform_stride && (dst.subnr % 32 == src0.subnr / 2)) ||
+                   (src0_stride == 8 && src0_uniform_stride && (dst.subnr % 16 == src0.subnr / 4)))
+                  allowed = true;
+
+            } else if (src0_size == 1 && dst_size == 1 && dst_stride == 1 && w != 2) {
+               if ((src0_stride < 2) ||
+                   (src0_stride == 2 && src0_uniform_stride && (dst.subnr % 32 == src0.subnr / 2)) ||
+                   (src0_stride == 4 && src0_uniform_stride && (dst.subnr % 16 == src0.subnr / 4)))
+                  allowed = true;
+
+            } else if (src0_size == 1 && dst_size == 1 && dst_stride == 1 && w == 2) {
+               if ((h == 0 && v < 4) ||
+                   (h == 1 && v < 4) ||
+                   (h == 2 && v < 2) ||
+                   (h == 1 && v == 4 && (dst.subnr % 32 == 2 * (src0.subnr / 4)) && (src0.subnr % 2 == 0)) ||
+                   (h == 2 && v == 4 && (dst.subnr % 32 == src0.subnr / 2)) ||
+                   (h == 4 && v == 8 && (dst.subnr % 32 == src0.subnr / 4)))
+                  allowed = true;
+            }
+         }
+
+         fsv_assert(allowed && "Invalid register region for source 0.");
+      }
+
+      /* "Src1 Restrictions" in "Special Restrictions" in Bspec 56640. */
+      if (devinfo->ver >= 20 &&
+          inst->sources > 1 &&
+          (inst->src[1].file == FIXED_GRF || inst->src[1].file == ARF)) {
+         brw_reg &src1 = inst->src[1];
+         brw_reg &dst  = inst->dst;
+
+         const unsigned v = 1 << (MAX2(src1.vstride, 1) - 1);
+         const unsigned w = 1 << src1.width;
+         const unsigned h = 1 << (MAX2(src1.hstride, 1) - 1);
+
+         /* TODO: Handle usage of address register once is available in the backend IR. */
+         const bool is_Vx1 = false;
+
+         const unsigned src1_stride         = w == 1 ? v : h;
+         const unsigned src1_uniform_stride = (w == 1) || (h * w == v) || is_Vx1;
+         const unsigned dst_stride          = dst.hstride;
+
+         const unsigned src1_size = brw_type_size_bytes(src1.type);
+         const unsigned dst_size = brw_type_size_bytes(dst.type);
+         const bool dst_dword_aligned = (dst_size >= 4) ||
+                                        (dst_size == 2 && (dst.subnr % 2 == 0)) ||
+                                        (dst_size == 1 && (dst.subnr % 4 == 0));
+
+         /* The section below follows the pseudo-code in the spec to make
+          * easier to verify.
+          */
+         bool allowed = false;
+         if ((dst_size >= 4) ||
+             (src1_size >= 4) ||
+             (dst_size == 2 && dst_stride > 1) ||
+             (dst_size == 1 && dst_stride > 2)) {
+            /* One element per DWord channel. */
+            allowed = true;
+
+         } else if (src1_uniform_stride || dst_dword_aligned) {
+            if (src1_size == 2 && dst_size == 2) {
+               if ((src1_stride < 2) ||
+                   (src1_stride == 2 && src1_uniform_stride && (dst.subnr % 16 == src1.subnr / 2)))
+                  allowed = true;
+
+            } else if (src1_size == 2 && dst_size == 1 && dst_stride == 2) {
+               if ((src1_stride < 2) ||
+                   (src1_stride == 2 && src1_uniform_stride && (dst.subnr % 32 == src1.subnr)))
+                  allowed = true;
+            }
+         }
+
+         fsv_assert(allowed && "Invalid register region for source 1.");
+      }
+   }
+}
+
+void
+brw_fs_validate_late(const fs_visitor &s)
+{
+   brw_fs_validate_register_region_special_restrictions(s);
+}
+
 #endif
