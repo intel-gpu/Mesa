@@ -166,16 +166,31 @@ intel_set_ps_dispatch_state(struct GENX(3DSTATE_PS) *ps,
 #endif
 
 #if GFX_VERx10 >= 125
-
-UNUSED static int
-preferred_slm_allocation_size(const struct intel_device_info *devinfo)
+UNUSED static uint32_t
+preferred_slm_allocation_size(uint32_t slm_size)
 {
-   if (devinfo->platform == INTEL_PLATFORM_LNL && devinfo->revision == 0)
-      return SLM_ENCODES_128K;
+   /* Older platforms than Xe2 has a encode = 0 that sets preferred SLM
+    * allocation to maximum supported, so keeping it until we come up
+    * with a formula to calculate the optimal preferred slm allocation.
+    */
+   if (GFX_VER < 20)
+      return 0;
 
-   return 0;
+#if INTEL_WA_16018610683
+   assert(slm_size <= (128 * 1024));
+   if (slm_size > (128 * 1024))
+      slm_size = (128 * 1024);
+#endif
+
+   /* Xe2 has 2 requirements for preferred SLM size:
+    * - this value needs to be >= then SLM size
+    * - this value must be less than shared SLM/L1$ RAM in the sub-slice of platform
+    *
+    * For now it is not calculating the optimal preferred SLM allocation,
+    * it is just setting the minimum value that comply with first restriction.
+    */
+   return encode_preferred_slm_size(GFX_VER, slm_size);
 }
-
 #endif
 
 #ifdef __cplusplus

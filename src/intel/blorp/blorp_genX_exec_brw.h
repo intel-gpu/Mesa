@@ -1736,7 +1736,7 @@ blorp_exec_compute(struct blorp_batch *batch, const struct blorp_params *params)
          .NumberofThreadsinGPGPUThreadGroup = dispatch.threads,
          .SharedLocalMemorySize =
             encode_slm_size(GFX_VER, prog_data->total_shared),
-         .PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo),
+         .PreferredSLMAllocationSize = preferred_slm_allocation_size(prog_data->total_shared),
          .NumberOfBarriers = cs_prog_data->uses_barrier,
       };
    }

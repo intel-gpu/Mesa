@@ -311,7 +311,6 @@ translate_wrap(unsigned pipe_wrap)
    return map[pipe_wrap];
 }
 
-
 static inline uint32_t
 iris_encode_slm_size(unsigned gen, uint32_t bytes)
 {
@@ -8901,13 +8900,13 @@ iris_upload_compute_walker(struct iris_context *ice,
    idd.NumberofThreadsinGPGPUThreadGroup = dispatch.threads;
    idd.SharedLocalMemorySize =
       iris_encode_slm_size(GFX_VER, shader->total_shared);
+   idd.PreferredSLMAllocationSize = preferred_slm_allocation_size(shader->total_shared);
    idd.SamplerStatePointer = shs->sampler_table.offset;
    idd.SamplerCount = encode_sampler_count(shader),
    idd.BindingTablePointer = binder->bt_offset[MESA_SHADER_COMPUTE];
    /* Typically set to 0 to avoid prefetching on every thread dispatch. */
    idd.BindingTableEntryCount = devinfo->verx10 == 125 ?
       0 : MIN2(shader->bt.size_bytes / 4, 31);
-   idd.PreferredSLMAllocationSize = preferred_slm_allocation_size(devinfo);
    idd.NumberOfBarriers = cs_data->uses_barrier;
 
    iris_measure_snapshot(ice, batch, INTEL_SNAPSHOT_COMPUTE, NULL, NULL, NULL);
