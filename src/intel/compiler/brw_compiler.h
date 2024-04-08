@@ -1576,6 +1576,47 @@ slm_encode_lookup(struct slm_encode *table, unsigned int table_len, uint32_t byt
    return table[table_len - 1].encode;
 }
 
+/* encode = 0 sets to largest SLM size supported in subslice */
+static struct slm_encode preferred_slm_allocation_size_table[] = {
+   { .encode = 0x8, .size_in_kb = 0, },
+   { .encode = 0x9, .size_in_kb = 16, },
+   { .encode = 0xa, .size_in_kb = 32, },
+   { .encode = 0xb, .size_in_kb = 64, },
+   { .encode = 0xc, .size_in_kb = 96, },
+   { .encode = 0xd, .size_in_kb = 128, },
+};
+
+static struct slm_encode xe2_preferred_slm_allocation_size_table[] = {
+  { .encode = 0x0, .size_in_kb = 0, },
+  { .encode = 0x1, .size_in_kb = 16, },
+  { .encode = 0x2, .size_in_kb = 32, },
+  { .encode = 0x3, .size_in_kb = 64, },
+  { .encode = 0x4, .size_in_kb = 96, },
+  { .encode = 0x5, .size_in_kb = 128, },
+  { .encode = 0x6, .size_in_kb = 160, },
+  { .encode = 0x7, .size_in_kb = 192, },
+  { .encode = 0x8, .size_in_kb = 224, },
+  { .encode = 0x9, .size_in_kb = 256, },
+  { .encode = 0xA, .size_in_kb = 384, },
+};
+
+static inline uint32_t
+encode_preferred_slm_size(unsigned gen, uint32_t bytes)
+{
+   struct slm_encode *table;
+   unsigned int table_len;
+
+   if (gen >= 20) {
+      table = xe2_preferred_slm_allocation_size_table;
+      table_len = ARRAY_SIZE(xe2_preferred_slm_allocation_size_table);
+   } else {
+      table = preferred_slm_allocation_size_table;
+      table_len = ARRAY_SIZE(preferred_slm_allocation_size_table);
+   }
+
+   return slm_encode_lookup(table, table_len, bytes);
+}
+
 static struct slm_encode xe2_slm_allocation_size_table[] = {
   { .encode = 0x0, .size_in_kb = 0, },
   { .encode = 0x1, .size_in_kb = 1, },
