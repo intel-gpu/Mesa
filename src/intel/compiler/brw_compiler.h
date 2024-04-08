@@ -1556,6 +1556,44 @@ void brw_debug_key_recompile(const struct brw_compiler *c, void *log,
                              const struct brw_base_prog_key *old_key,
                              const struct brw_base_prog_key *key);
 
+struct slm_encode {
+  uint32_t encode;
+  uint32_t size_in_kb;
+};
+
+static inline uint32_t
+slm_encode_lookup(struct slm_encode *table, unsigned int table_len, uint32_t bytes)
+{
+   const uint32_t kbytes = DIV_ROUND_UP(bytes, 1024);
+   unsigned int i;
+
+   assert(kbytes <= table[table_len - 1].size_in_kb);
+   for (i = 0; i < table_len; i++) {
+      if (table[i].size_in_kb >= kbytes)
+         return table[i].encode;
+   }
+
+   return table[table_len - 1].encode;
+}
+
+static struct slm_encode xe2_slm_allocation_size_table[] = {
+  { .encode = 0x0, .size_in_kb = 0, },
+  { .encode = 0x1, .size_in_kb = 1, },
+  { .encode = 0x2, .size_in_kb = 2, },
+  { .encode = 0x3, .size_in_kb = 4, },
+  { .encode = 0x4, .size_in_kb = 8, },
+  { .encode = 0x5, .size_in_kb = 16, },
+  { .encode = 0x8, .size_in_kb = 24, },
+  { .encode = 0x6, .size_in_kb = 32, },
+  { .encode = 0x9, .size_in_kb = 48, },
+  { .encode = 0x7, .size_in_kb = 64, },
+  { .encode = 0xA, .size_in_kb = 96, },
+  { .encode = 0xB, .size_in_kb = 128, },
+  { .encode = 0xC, .size_in_kb = 192, },
+  { .encode = 0xD, .size_in_kb = 256, },
+  { .encode = 0xE, .size_in_kb = 384, },
+};
+
 /* Shared Local Memory Size is specified as powers of two,
  * and also have a Gen-dependent minimum value if not zero.
  */
@@ -1572,7 +1610,16 @@ intel_calculate_slm_size(unsigned gen, uint32_t bytes)
 static inline uint32_t
 encode_slm_size(unsigned gen, uint32_t bytes)
 {
-   uint32_t slm_size = 0;
+   uint32_t slm_size;
+
+   if (bytes == 0)
+      return 0;
+
+   if (gen >= 20) {
+      slm_encode_lookup(xe2_slm_allocation_size_table,
+                        ARRAY_SIZE(xe2_slm_allocation_size_table),
+                        bytes);
+   }
 
    /* Shared Local Memory is specified as powers of two, and encoded in
     * INTERFACE_DESCRIPTOR_DATA with the following representations:
@@ -1584,19 +1631,17 @@ encode_slm_size(unsigned gen, uint32_t bytes)
     * Gfx9+  |    0 |    1 |    2 |    3 |    4 |     5 |     6 |     7 |
     */
 
-   if (bytes > 0) {
-      slm_size = intel_calculate_slm_size(gen, bytes);
-      assert(util_is_power_of_two_nonzero(slm_size));
+   slm_size = intel_calculate_slm_size(gen, bytes);
+   assert(util_is_power_of_two_nonzero(slm_size));
 
-      if (gen >= 9) {
-         /* Turn an exponent of 10 (1024 kB) into 1. */
-         assert(slm_size >= 1024);
-         slm_size = ffs(slm_size) - 10;
-      } else {
-         assert(slm_size >= 4096);
-         /* Convert to the pre-Gfx9 representation. */
-         slm_size = slm_size / 4096;
-      }
+   if (gen >= 9) {
+      /* Turn an exponent of 10 (1024 kB) into 1. */
+      assert(slm_size >= 1024);
+      slm_size = ffs(slm_size) - 10;
+   } else {
+      assert(slm_size >= 4096);
+      /* Convert to the pre-Gfx9 representation. */
+      slm_size = slm_size / 4096;
    }
 
    return slm_size;
