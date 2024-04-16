@@ -440,6 +440,9 @@ enum anv_bo_alloc_flags {
 
    /** For descriptor buffer pools */
    ANV_BO_ALLOC_DESCRIPTOR_BUFFER_POOL =  (1 << 21),
+
+   /** Compressed buffer, only supported in Xe2+ */
+   ANV_BO_ALLOC_COMPRESSED =              (1 << 22),
 };
 
 /** Specifies that the BO should be cached and coherent. */
@@ -967,7 +970,8 @@ struct anv_memory_type {
    VkMemoryPropertyFlags   propertyFlags;
    uint32_t                heapIndex;
    /* Whether this is the descriptor buffer memory type */
-   bool                    descriptor_buffer;
+   bool                    descriptor_buffer : 1;
+   bool                    compressed : 1;
 };
 
 struct anv_memory_heap {
@@ -1129,6 +1133,8 @@ struct anv_physical_device {
       uint32_t                                  desc_buffer_mem_types;
       /** Mask of memory types of protected buffers/images */
       uint32_t                                  protected_mem_types;
+      /** Mask of memory types of compressed buffers/images */
+      uint32_t                                  compressed_mem_types;
     } memory;
 
     struct {
