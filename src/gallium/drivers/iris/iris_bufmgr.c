@@ -775,7 +775,10 @@ iris_slab_alloc(void *priv,
    }
    assert(slab_size != 0);
 
-   if (heap == IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT ||
+   if (heap == IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED ||
+       heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED)
+      flags |= BO_ALLOC_COMPRESSED;
+   else if (heap == IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT ||
        heap == IRIS_HEAP_SYSTEM_MEMORY_UNCACHED)
       flags |= BO_ALLOC_SMEM;
    else if (heap == IRIS_HEAP_DEVICE_LOCAL)
@@ -843,6 +846,9 @@ flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
    const struct intel_device_info *devinfo = &bufmgr->devinfo;
 
    if (bufmgr->vram.size > 0) {
+      if (flags & BO_ALLOC_COMPRESSED)
+         return IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED;
+
       /* Discrete GPUs currently always snoop CPU caches. */
       if ((flags & BO_ALLOC_SMEM) || (flags & BO_ALLOC_COHERENT))
          return IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT;
@@ -870,6 +876,9 @@ flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
 
       if (flags & BO_ALLOC_COHERENT)
          return IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT;
+
+      if (flags & BO_ALLOC_COMPRESSED)
+         return IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED;
 
       return IRIS_HEAP_SYSTEM_MEMORY_UNCACHED;
    }
@@ -1106,6 +1115,7 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
    if (bufmgr->vram.size > 0) {
       switch (bo->real.heap) {
       case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
+      case IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED:
          /* For vram allocations, still use system memory as a fallback. */
          regions[num_regions++] = bufmgr->vram.region;
          regions[num_regions++] = bufmgr->sys.region;
@@ -1117,6 +1127,10 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
       case IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT:
          regions[num_regions++] = bufmgr->sys.region;
          break;
+      case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
+         /* not valid, compressed in discrete is always created with
+          * IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED
+          */
       case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED:
          /* not valid; discrete cards always enable snooping */
       case IRIS_HEAP_MAX:
@@ -1146,9 +1160,11 @@ const char *
 iris_heap_to_string[IRIS_HEAP_MAX] = {
    [IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT] = "system-cached-coherent",
    [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED] = "system-uncached",
+   [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED] = "system-uncached-compressed",
    [IRIS_HEAP_DEVICE_LOCAL] = "local",
    [IRIS_HEAP_DEVICE_LOCAL_PREFERRED] = "local-preferred",
    [IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR] = "local-cpu-visible-small-bar",
+   [IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED] = "local-preferred-compressed",
 };
 
 static enum iris_mmap_mode
@@ -1161,10 +1177,12 @@ heap_to_mmap_mode(struct iris_bufmgr *bufmgr, enum iris_heap heap)
       return intel_vram_all_mappable(devinfo) ? IRIS_MMAP_WC : IRIS_MMAP_NONE;
    case IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR:
    case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
+   case IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED:
       return IRIS_MMAP_WC;
    case IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT:
       return IRIS_MMAP_WB;
    case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED:
+   case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
       return IRIS_MMAP_WC;
    default:
       unreachable("invalid heap");
@@ -2614,6 +2632,9 @@ iris_heap_to_pat_entry(const struct intel_device_info *devinfo,
    case IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR:
    case IRIS_HEAP_DEVICE_LOCAL_PREFERRED:
       return &devinfo->pat.writecombining;
+   case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
+   case IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED:
+      return &devinfo->pat.compressed;
    default:
       unreachable("invalid heap for platforms using PAT entries");
    }

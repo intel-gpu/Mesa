@@ -179,12 +179,20 @@ enum iris_heap {
     */
    IRIS_HEAP_SYSTEM_MEMORY_UNCACHED,
 
+   /** IRIS_HEAP_SYSTEM_MEMORY_UNCACHED + compressed, only supported in Xe2 */
+   IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED,
+
    /** Device-local memory (VRAM).  Cannot be placed in system memory! */
    IRIS_HEAP_DEVICE_LOCAL,
    IRIS_HEAP_MAX_NO_VRAM = IRIS_HEAP_DEVICE_LOCAL,
 
    /** Device-local memory that may be evicted to system memory if needed. */
    IRIS_HEAP_DEVICE_LOCAL_PREFERRED,
+
+   /** Device-local compressed memory that may be evicted to system memory if
+    * needed, only supported in Xe2
+    */
+   IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED,
 
    /**
     * Device-local memory (VRAM) + guarantee that is CPU visible.
@@ -205,7 +213,8 @@ iris_heap_is_device_local(enum iris_heap heap)
 {
    return heap == IRIS_HEAP_DEVICE_LOCAL ||
           heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED ||
-          heap == IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR;
+          heap == IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR ||
+          heap == IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED;
 }
 
 #define IRIS_BATCH_COUNT 3
@@ -375,6 +384,8 @@ struct iris_bo {
 #define BO_ALLOC_CAPTURE         (1<<8)
 /* Can be mapped. */
 #define BO_ALLOC_CPU_VISIBLE     (1<<9)
+/* Can be compressed. */
+#define BO_ALLOC_COMPRESSED      (1<<10)
 
 /**
  * Allocate a buffer object.
