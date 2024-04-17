@@ -2373,6 +2373,13 @@ static void anv_emit_barrier_for_type(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
+   /* Wa_18037648410: VF invalidate could be coming from compute. However HW
+    * masks this and skips invalidate, therefore set GEOM and COMPUTE to
+    * ensure it happens.
+    */
+   if (body.SignalStage == RESOURCE_BARRIER_STAGE_GPGPU && body.VFRO)
+      body.SignalStage = RESOURCE_BARRIER_STAGE_GEOMETRYANDCOMPUTE;
+
    body.BarrierType = type;
    anv_batch_emit(&cmd_buffer->batch,
                GENX(RESOURCE_BARRIER), barrier) {
