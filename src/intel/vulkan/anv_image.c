@@ -2033,8 +2033,14 @@ anv_image_supports_pat_compression(struct anv_device *device,
    if (device->info->ver < 20)
       return false;
 
-   /* TODO: check for other compression requirements and return true */
-   return false;
+   /* There are no compression-enabled modifiers on Xe2, and all legacy
+    * modifiers are not defined with compression. We simply disable
+    * compression on all modifiers.
+    */
+   if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
+      return false;
+
+   return true;
 }
 
 void
