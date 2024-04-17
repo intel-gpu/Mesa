@@ -1052,7 +1052,7 @@ iris_resource_image_supports_pat_compression(const struct iris_screen *screen,
                                              struct iris_resource *res,
                                              unsigned flags)
 {
-   struct iris_bufmgr *bufmgr = screen->bufmgr;
+   assert(templ->target != PIPE_BUFFER);
 
    if (INTEL_DEBUG(DEBUG_NO_CCS))
       return false;
@@ -1060,14 +1060,44 @@ iris_resource_image_supports_pat_compression(const struct iris_screen *screen,
    if (screen->devinfo->ver < 20)
       return false;
 
-   if (flags & BO_ALLOC_PROTECTED)
+   if (flags & (BO_ALLOC_PROTECTED |
+                BO_ALLOC_COHERENT |
+                BO_ALLOC_CPU_VISIBLE))
       return false;
 
+   struct iris_bufmgr *bufmgr = screen->bufmgr;
    if ((iris_bufmgr_vram_size(bufmgr) > 0) && (flags & BO_ALLOC_SMEM))
       return false;
 
-   /* TODO: check for other compression requirements and return true */
-   return false;
+   /* We don't have modifiers with compression enabled on Xe2 so far. */
+   if (res->mod_info && res->mod_info->modifier != DRM_FORMAT_MOD_INVALID)
+      return false;
+
+   /* Bspec 58797:
+    *
+    *    Enabling compression is not legal for TileX surfaces.
+    */
+   if (res->surf.tiling == ISL_TILING_X)
+      return false;
+
+   /* Bspec 71650:
+    *
+    *    3 SW  must disable or resolve compression
+    *       Display: Access to anything except Tile4 Framebuffers...
+    *          Display Page Tables
+    *          Display State Buffers
+    *          Linear/TileX Framebuffers
+    *          Display Write-Back Buffers
+    *          Etc.
+    *
+    * So far, we don't support resolving on Xe2 and may not want to enable
+    * compression under these conditions later, so we only enable it when
+    * a TILING_4 image is to display.
+    */
+   if ((flags & BO_ALLOC_SCANOUT) && res->surf.tiling != ISL_TILING_4)
+      return false;
+
+   return true;
 }
 
 static struct pipe_resource *
