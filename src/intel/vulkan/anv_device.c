@@ -4414,9 +4414,6 @@ VkResult anv_AllocateMemory(
    if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_PROTECTED_BIT)
       alloc_flags |= ANV_BO_ALLOC_PROTECTED;
 
-   if (mem_type->compressed)
-      alloc_flags |= ANV_BO_ALLOC_COMPRESSED;
-
    /* For now, always allocated AUX-TT aligned memory, regardless of dedicated
     * allocations. An application can for example, suballocate a large
     * VkDeviceMemory and try to bind an image created with a CCS modifier. In
@@ -4479,6 +4476,9 @@ VkResult anv_AllocateMemory(
             alloc_flags |= ANV_BO_ALLOC_IMPLICIT_WRITE;
       }
    }
+
+   if (!(alloc_flags & ANV_BO_ALLOC_EXTERNAL) && mem_type->compressed)
+      alloc_flags |= ANV_BO_ALLOC_COMPRESSED;
 
    if (mem_type->descriptor_buffer)
       alloc_flags |= ANV_BO_ALLOC_DESCRIPTOR_BUFFER_POOL;
