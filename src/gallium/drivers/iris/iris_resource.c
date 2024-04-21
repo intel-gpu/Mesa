@@ -1073,6 +1073,9 @@ iris_resource_image_supports_pat_compression(const struct iris_screen *screen,
    if (res->mod_info && res->mod_info->modifier != DRM_FORMAT_MOD_INVALID)
       return false;
 
+   if (isl_surf_usage_is_depth(res->surf.usage))
+      return false;
+
    /* Bspec 58797:
     *
     *    Enabling compression is not legal for TileX surfaces.
