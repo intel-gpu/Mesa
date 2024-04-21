@@ -2040,6 +2040,16 @@ anv_image_supports_pat_compression(struct anv_device *device,
    if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
       return false;
 
+   for (uint32_t plane = 0; plane < image->n_planes; plane++) {
+      const struct isl_surf *surf =
+         &image->planes[plane].primary_surface.isl;
+      if (surf && isl_surf_usage_is_depth(surf->usage)) {
+         anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
+                       "Disable PAT-based compression on depth images.");
+         return false;
+      }
+   }
+
    return true;
 }
 
