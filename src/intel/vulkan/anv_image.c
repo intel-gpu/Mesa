@@ -2066,14 +2066,13 @@ anv_image_get_memory_requirements(struct anv_device *device,
     *    only if the memory type `i` in the VkPhysicalDeviceMemoryProperties
     *    structure for the physical device is supported.
     */
-   uint32_t memory_types;
+   uint32_t memory_types = device->physical->memory.default_buffer_mem_types;;
 
    if (image->vk.create_flags & VK_IMAGE_CREATE_PROTECTED_BIT)
-      memory_types = device->physical->memory.protected_mem_types;
-   else if (anv_image_supports_pat_compression(device, image))
-      memory_types = device->physical->memory.compressed_mem_types;
-   else
-      memory_types = device->physical->memory.default_buffer_mem_types;
+      memory_types |= device->physical->memory.protected_mem_types;
+
+   if (anv_image_supports_pat_compression(device, image))
+      memory_types |= device->physical->memory.compressed_mem_types;
 
    vk_foreach_struct(ext, pMemoryRequirements->pNext) {
       switch (ext->sType) {
