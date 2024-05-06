@@ -263,9 +263,22 @@ fast_clear_color(struct iris_context *ice,
     * and again afterwards to ensure that the resolve is complete before we
     * do any more regular drawing.
     */
+   /* From Bspec 57340 (MCS/CCS Buffers, Fast Clear for Render Target(s)):
+    *
+    *    Synchronization:
+    *    Due to interaction of scaled clearing rectangle with pixel
+    *    scoreboard, we require one of the following commands to be issued.
+    *    Note: Selection of RESOURCE_BARRIER allows hardware to
+    *    opportunistically combine this operation with previous
+    *    RESOURCE_BARRIER commands potentially reduceing overall
+    *    synchronization cost.
+    *
+    * We still use PIPE_CONTROL command on Xe2+. We could switch to the
+    * RESOURCE_BARRIER for some potential benefits later.
+    */
    iris_emit_end_of_pipe_sync(batch, "fast clear: pre-flush",
       PIPE_CONTROL_RENDER_TARGET_FLUSH |
-      PIPE_CONTROL_TILE_CACHE_FLUSH |
+      (devinfo->verx10 < 200 ? PIPE_CONTROL_TILE_CACHE_FLUSH : 0) |
       (devinfo->verx10 == 120 ? PIPE_CONTROL_DEPTH_STALL : 0) |
       (devinfo->verx10 == 125 ? PIPE_CONTROL_FLUSH_HDC |
                                 PIPE_CONTROL_DATA_CACHE_FLUSH : 0) |
