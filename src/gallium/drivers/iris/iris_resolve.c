@@ -51,11 +51,15 @@ disable_rb_aux_buffer(struct iris_context *ice,
    struct pipe_framebuffer_state *cso_fb = &ice->state.framebuffer;
    bool found = false;
 
+   struct iris_screen *screen = (void *) ice->ctx.screen;
+   const struct intel_device_info *devinfo = screen->devinfo;
    for (unsigned i = 0; i < cso_fb->nr_cbufs; i++) {
       struct iris_surface *surf = (void *) cso_fb->cbufs[i];
 
-      /* We only need to worry about color compression and fast clears. */
-      if (!surf ||
+      /* We only need to worry about color compression and fast clears on
+       * pre-Xe2 platforms.
+       */
+      if (devinfo->ver >= 20 || !surf ||
           (tex_res->aux.usage != ISL_AUX_USAGE_CCS_D &&
           tex_res->aux.usage != ISL_AUX_USAGE_CCS_E &&
           tex_res->aux.usage != ISL_AUX_USAGE_FCV_CCS_E)) {
