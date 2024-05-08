@@ -287,6 +287,9 @@ bucket_for_size(struct iris_bufmgr *bufmgr, uint64_t size,
    if (flags & BO_ALLOC_PROTECTED)
       return NULL;
 
+   if (flags & BO_ALLOC_COMPRESSED)
+      return NULL;
+
    const struct intel_device_info *devinfo = &bufmgr->devinfo;
    struct iris_bucket_cache *cache = &bufmgr->bucket_cache[heap];
 
