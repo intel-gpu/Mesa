@@ -318,7 +318,24 @@ isl_get_render_compression_format(enum isl_format format)
    case ISL_FORMAT_BC6H_UF16:
       return CMF_ML8;
    default:
-      unreachable("Unsupported render compression format!");
+      /* A CMF format affects the effectiveness of compression but should not
+       * cause corruption when it is not the most suitable choice for an
+       * image format.
+       *
+       * For an image format without CMF defined in Bspec, we either choose a
+       * single-channel CMF format that matches the format's bpb (up to 32
+       * bits) or a CMF format that has the same amount bits of the bpb with
+       * 32 bit channels.
+       */
+      switch(isl_format_get_layout(format)->bpb) {
+      case 8:  return CMF_R8;
+      case 16: return CMF_R16;
+      case 32: return CMF_R32;
+      case 64: return CMF_R32_G32;
+      case 128:return CMF_R32_G32_B32_A32;
+      default:
+         unreachable("Unknown format bpb");
+      }
       return 0;
    }
 }
