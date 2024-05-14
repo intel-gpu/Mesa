@@ -2345,11 +2345,15 @@ static void anv_add_resource_barrier(struct anv_cmd_buffer *cmd_buffer,
                                      const VkPipelineStageFlags2 srcStageMask,
                                      const VkAccessFlags2 srcAccessMask,
                                      const VkPipelineStageFlags2 dstStageMask,
-                                     const VkAccessFlags2 dstAccessMask)
+                                     const VkAccessFlags2 dstAccessMask,
+                                     struct anv_address drawid_addr)
 {
    struct anv_device *device = cmd_buffer->device;
    const struct intel_device_info *devinfo = device->info;
    assert(devinfo->ver >= 20);
+
+   if (anv_address_is_null(drawid_addr))
+      drawid_addr = cmd_buffer->device->workaround_address;
 
    struct GENX(RESOURCE_BARRIER_BODY) body =
       anv_resource_barrier_body_for_access_flags(cmd_buffer,
@@ -2359,34 +2363,45 @@ static void anv_add_resource_barrier(struct anv_cmd_buffer *cmd_buffer,
       anv_resource_barrier_signal_stage(cmd_buffer, srcStageMask);
    body.WaitStage =
       anv_resource_barrier_wait_stage(cmd_buffer, dstStageMask);
-   body.BarrierIDAddress = cmd_buffer->device->workaround_address;
+   body.BarrierIDAddress = drawid_addr;
 
-   anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_IMMEDIATE);
+   if (body.SignalStage && !body.WaitStage) {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_SIGNAL);
+   } else if (body.WaitStage && !body.SignalStage) {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_WAIT);
+   } else {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_IMMEDIATE);
+   }
 }
 
+
 static void anv_resource_barriers_from_info(struct anv_cmd_buffer *cmd_buffer,
-                                            const VkDependencyInfo *info)
+                                            const VkDependencyInfo *info,
+                                            const struct anv_address drawid_addr)
 {
    for (uint32_t i = 0; i < info->memoryBarrierCount; i++)
       anv_add_resource_barrier(cmd_buffer,
                                info->pMemoryBarriers[i].srcStageMask,
                                info->pMemoryBarriers[i].srcAccessMask,
                                info->pMemoryBarriers[i].dstStageMask,
-                               info->pMemoryBarriers[i].dstStageMask);
+                               info->pMemoryBarriers[i].dstStageMask,
+                               drawid_addr);
 
    for (uint32_t i = 0; i < info->bufferMemoryBarrierCount; i++)
       anv_add_resource_barrier(cmd_buffer,
                                info->pBufferMemoryBarriers[i].srcStageMask,
                                info->pBufferMemoryBarriers[i].srcAccessMask,
                                info->pBufferMemoryBarriers[i].dstStageMask,
-                               info->pBufferMemoryBarriers[i].dstStageMask);
+                               info->pBufferMemoryBarriers[i].dstStageMask,
+                               drawid_addr);
 
    for (uint32_t i = 0; i < info->imageMemoryBarrierCount; i++)
       anv_add_resource_barrier(cmd_buffer,
                                info->pImageMemoryBarriers[i].srcStageMask,
                                info->pImageMemoryBarriers[i].srcAccessMask,
                                info->pImageMemoryBarriers[i].dstStageMask,
-                               info->pImageMemoryBarriers[i].dstStageMask);
+                               info->pImageMemoryBarriers[i].dstStageMask,
+                               drawid_addr);
 }
 
 #endif /* GFX_VER >= 20 */
@@ -4601,7 +4616,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
                                      img_barrier->srcStageMask,
                                      img_barrier->srcAccessMask,
                                      img_barrier->dstStageMask,
-                                     img_barrier->dstAccessMask);
+                                     img_barrier->dstAccessMask,
+                                  ANV_NULL_ADDRESS);
          }
 #endif // GFX_VER >= 20
 
@@ -4695,13 +4711,24 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
                   uint32_t level_layer_count =
                      MIN2(layer_count, aux_layers - base_layer);
 
-                  set_image_compressed_bit(cmd_buffer, image, aspect,
-                                           level,
-                                           base_layer, level_layer_count,
-                                           true);
-               }
+               set_image_compressed_bit(cmd_buffer, image, aspect,
+                                        level,
+                                        base_layer, level_layer_count,
+                                        true);
             }
          }
+      }
+
+      if (!usePipeControl) {
+#if GFX_VER >= 20
+         anv_add_resource_barrier(cmd_buffer,
+                                  img_barrier->srcStageMask,
+                                  img_barrier->srcAccessMask,
+                                  img_barrier->dstStageMask,
+                                  img_barrier->dstAccessMask,
+                                  ANV_NULL_ADDRESS);
+#endif // GFX_VER >= 20
+      }
 
          if (anv_image_is_sparse(image) && mask_is_write(src_flags))
             apply_sparse_flushes = true;
@@ -4753,7 +4780,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
                                   src_stage,
                                   access_mask->srcAccess,
                                   access_mask->dstStageMask,
-                                  access_mask->dstAccess);
+                                  access_mask->dstAccess,
+                                  ANV_NULL_ADDRESS);
       }
 
 #endif // GFX_VER >= 20
@@ -6295,7 +6323,12 @@ void genX(CmdSetEvent2)(
 
    if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
 #if GFX_VER >= 20
-      anv_resource_barriers_from_info(cmd_buffer, pDependencyInfo);
+      const struct anv_address drawid_addr =
+         anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
+                                      event->state);
+      anv_resource_barriers_from_info(cmd_buffer,
+                                      pDependencyInfo,
+                                      drawid_addr);
 #endif
    } else {
       for (uint32_t i = 0; i < pDependencyInfo->memoryBarrierCount; i++)
@@ -6369,16 +6402,32 @@ void genX(CmdWaitEvents2)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   for (uint32_t i = 0; i < eventCount; i++) {
-      ANV_FROM_HANDLE(anv_event, event, pEvents[i]);
+   const struct intel_device_info *devinfo = cmd_buffer->device->info;
 
-      anv_batch_emit(&cmd_buffer->batch, GENX(MI_SEMAPHORE_WAIT), sem) {
-         sem.WaitMode            = PollingMode;
-         sem.CompareOperation    = COMPARE_SAD_EQUAL_SDD;
-         sem.SemaphoreDataDword  = VK_EVENT_SET;
-         sem.SemaphoreAddress    = anv_state_pool_state_address(
-            &cmd_buffer->device->dynamic_state_pool,
-            event->state);
+   if (devinfo->ver >= 20 && INTEL_DEBUG(DEBUG_USEBARRIERS)) {
+#if GFX_VER >= 20
+      for (uint32_t i = 0; i < eventCount; i++) {
+         ANV_FROM_HANDLE(anv_event, event, pEvents[i]);
+         const struct anv_address drawid_addr =
+            anv_state_pool_state_address(&cmd_buffer->device->dynamic_state_pool,
+                                       event->state);
+         anv_resource_barriers_from_info(cmd_buffer,
+                                         pDependencyInfos,
+                                         drawid_addr);
+      }
+#endif
+   } else {
+      for (uint32_t i = 0; i < eventCount; i++) {
+         ANV_FROM_HANDLE(anv_event, event, pEvents[i]);
+
+         anv_batch_emit(&cmd_buffer->batch, GENX(MI_SEMAPHORE_WAIT), sem) {
+            sem.WaitMode            = PollingMode;
+            sem.CompareOperation    = COMPARE_SAD_EQUAL_SDD;
+            sem.SemaphoreDataDword  = VK_EVENT_SET;
+            sem.SemaphoreAddress    = anv_state_pool_state_address(
+               &cmd_buffer->device->dynamic_state_pool,
+               event->state);
+         }
       }
    }
 
