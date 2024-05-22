@@ -963,6 +963,27 @@ print_ubo_load(nir_builder *b,
 }
 #endif
 
+static uint32_t brw_nir_max_imm_offset(nir_intrinsic_instr *instr,
+                                       const void *data)
+{
+   const bool bindless = nir_intrinsic_resource_access_intel(instr) &
+                         nir_resource_intel_bindless;
+
+   switch (instr->intrinsic) {
+   /* FLAT offsets are limited to 19 bits */
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_store_shared:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
+      return (1 << 20) - 1;
+   /* SS offsets are limited to 16 bits
+    * BTI offsets are limited to 11 bits
+    */
+   default:
+      return bindless ? (1 << 17) - 1 : (1 << 12) - 1;
+   }
+}
+
 static bool
 print_tex_handle(nir_builder *b,
                  nir_instr *instr,
@@ -1135,6 +1156,14 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    }
 
    NIR_PASS_V(nir, anv_nir_update_resource_intel_block);
+
+   if (compiler->devinfo->ver >= 20) {
+      const nir_opt_offsets_options offset_options = {
+         .max_offset_cb = brw_nir_max_imm_offset,
+      };
+
+      NIR_PASS_V(nir, nir_opt_offsets, &offset_options);
+   }
 
    stage->dynamic_push_values = anv_nir_compute_dynamic_push_bits(nir);
 
