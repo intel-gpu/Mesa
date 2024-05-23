@@ -633,14 +633,7 @@ fs_visitor::emit_fb_writes()
                                 this->outputs[0].file != BAD_FILE);
    assert(!prog_data->dual_src_blend || key->nr_color_regions == 1);
 
-   /* Following condition implements Wa_14017468336:
-    *
-    * "If dual source blend is enabled do not enable SIMD32 dispatch" and
-    * "For a thread dispatched as SIMD32, must not issue SIMD8 message with Last
-    *  Render Target Select set."
-    */
-   if (devinfo->ver >= 11 && devinfo->ver <= 12 &&
-       prog_data->dual_src_blend) {
+   if (devinfo->ver >= 11 && prog_data->dual_src_blend) {
       /* The dual-source RT write messages fail to release the thread
        * dependency on ICL and TGL with SIMD32 dispatch, leading to hangs.
        *
@@ -651,6 +644,12 @@ fs_visitor::emit_fb_writes()
        * The dual-source RT write messages may lead to hangs with SIMD16
        * dispatch on ICL due some unknown reasons, see
        * https://gitlab.freedesktop.org/mesa/mesa/-/issues/2183
+       *
+       * This also implements the following for Wa_14017468336:
+       *
+       * "If dual source blend is enabled do not enable SIMD32 dispatch" and
+       * "For a thread dispatched as SIMD32, must not issue SIMD8 message with
+       * Last Render Target Select set."
        */
       if (devinfo->ver >= 20)
          limit_dispatch_width(16, "Dual source blending unsupported "
