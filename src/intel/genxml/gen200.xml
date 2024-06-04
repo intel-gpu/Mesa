@@ -919,6 +919,39 @@
     <field name="Surf LOD" dword="7" bits="19:16" type="uint" />
     <field name="Render Target View Extent" dword="7" bits="31:21" type="uint" />
   </instruction>
+  <instruction name="3DSTATE_TBIMR_TILE_PASS_INFO" bias="2" length="4" engine="render">
+    <field name="DWord Length" dword="0" bits="7:0" type="uint" default="2" />
+    <field name="3D Command Sub Opcode" dword="0" bits="23:16" type="uint" default="110" />
+    <field name="3D Command Opcode" dword="0" bits="26:24" type="uint" default="0" />
+    <field name="Command SubType" dword="0" bits="28:27" type="uint" default="3" />
+    <field name="Command Type" dword="0" bits="31:29" type="uint" default="3" />
+    <field name="Tile Rectangle Height" dword="1" bits="13:0" type="uint" />
+    <field name="Tile Rectangle Width" dword="1" bits="29:16" type="uint" />
+    <field name="Vertical Tile Count" dword="2" bits="15:0" type="uint" />
+    <field name="Horizontal Tile Count" dword="2" bits="31:16" type="uint" />
+    <field name="Walk Pattern" dword="3" bits="0:0" type="uint">
+      <value name="Z-Walk Pattern" value="0" />
+      <value name="Snake Walk Pattern" value="1" />
+    </field>
+    <field name="Tile Mode Enable" dword="3" bits="1:1" type="uint">
+      <value name="Pixel Hashing Mode Enable" value="0" />
+      <value name="Tile Hashing Mode Enable" value="1" />
+    </field>
+    <field name="Tile Box Check" dword="3" bits="2:2" type="uint" default="1">
+      <value name="Disable Tile Box Check" value="0" />
+      <value name="Enable Tile Box Check" value="1" />
+    </field>
+    <field name="TBIMR Batch Size" dword="3" bits="5:3" type="uint" default="5">
+      <value name="32 Batch Size" value="0" />
+      <value name="64 Batch Size" value="1" />
+      <value name="128 Batch Size" value="2" />
+      <value name="256 Batch Size" value="3" />
+      <value name="512 Batch Size" value="4" />
+      <value name="1024 Batch Size" value="5" />
+      <value name="768 Batch Size" value="6" />
+      <value name="896 Batch Size" value="7" />
+    </field>
+  </instruction>
   <instruction name="3DSTATE_TE" bias="2" length="5" engine="render">
     <field name="DWord Length" dword="0" bits="7:0" type="uint" default="3" />
     <field name="3D Command Sub Opcode" dword="0" bits="23:16" type="uint" default="28" />
