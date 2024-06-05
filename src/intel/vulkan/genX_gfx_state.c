@@ -589,7 +589,7 @@ is_src1_blend_factor(enum GENX(3D_Color_Buffer_Blend_Factor) factor)
           factor == BLENDFACTOR_INV_SRC1_ALPHA;
 }
 
-#if GFX_VERx10 == 125
+#if GFX_VERx10 >= 125
 /**
  * Return the dimensions of the current rendering area, defined as the
  * bounding box of all present color, depth and stencil attachments.
@@ -1798,7 +1798,7 @@ update_scissors(struct anv_gfx_dynamic_state *hw_state,
    }
 }
 
-#if GFX_VERx10 == 125
+#if GFX_VERx10 >= 125
 ALWAYS_INLINE static void
 update_tbimr_info(struct anv_gfx_dynamic_state *hw_state,
                   const struct anv_device *device,
@@ -2011,7 +2011,7 @@ cmd_buffer_flush_gfx_runtime_state(struct anv_gfx_dynamic_state *hw_state,
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_VP_VIEWPORTS))
       update_scissors(hw_state, dyn, gfx, cmd_buffer_level);
 
-#if GFX_VERx10 == 125
+#if GFX_VERx10 >= 125
    if ((gfx->dirty & ANV_CMD_DIRTY_RENDER_TARGETS))
       update_tbimr_info(hw_state, device, gfx, pipeline->base.base.l3_config);
 #endif
