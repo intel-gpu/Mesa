@@ -7060,7 +7060,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
    }
 
-#if GFX_VERx10 == 125
+#if GFX_VERx10 >= 125
    if (dirty & (IRIS_DIRTY_RENDER_BUFFER | IRIS_DIRTY_DEPTH_BUFFER)) {
       struct pipe_framebuffer_state *cso_fb = &ice->state.framebuffer;
       unsigned tile_width, tile_height;
