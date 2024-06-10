@@ -647,8 +647,9 @@ calculate_tile_dimensions(const struct anv_device *device,
                           unsigned fb_width, unsigned fb_height,
                           unsigned *tile_width, unsigned *tile_height)
 {
-   assert(GFX_VER == 12);
-   const unsigned aux_scale = ISL_MAIN_TO_CCS_SIZE_RATIO_XE;
+   const unsigned aux_scale = GFX_VER >= 20 ?
+                              ISL_MAIN_TO_CCS_SIZE_RATIO_XE2 :
+                              ISL_MAIN_TO_CCS_SIZE_RATIO_XE;
 
    unsigned pixel_size = 0;
 
