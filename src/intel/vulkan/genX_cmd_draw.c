@@ -2184,6 +2184,20 @@ void genX(CmdEndTransformFeedbackEXT)(
 
 #if GFX_VERx10 >= 125
 
+// TODO: Figure out which WA this is
+
+static void
+genX(emit_xe2_l1_flush_after_mesh)(struct anv_cmd_buffer *cmd_buffer)
+{
+#if GFX_VER >= 20
+   anv_perf_warn(VK_LOG_OBJS(&cmd_buffer->vk.base), "post 3DMESH HDC flush");
+   anv_add_pending_pipe_bits(cmd_buffer,
+                             ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT,
+                             "post 3DMESH L1 eviction");
+   genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+#endif
+}
+
 void
 genX(CmdDrawMeshTasksEXT)(
       VkCommandBuffer commandBuffer,
@@ -2214,6 +2228,8 @@ genX(CmdDrawMeshTasksEXT)(
       m.ThreadGroupCountY = y;
       m.ThreadGroupCountZ = z;
    }
+
+   genX(emit_xe2_l1_flush_after_mesh)(cmd_buffer);
 
    trace_intel_end_draw_mesh(&cmd_buffer->trace, x, y, z);
 }
@@ -2302,6 +2318,8 @@ genX(CmdDrawMeshTasksIndirectEXT)(
       emit_indirect_3dmesh_3d(&cmd_buffer->batch,
             cmd_state->conditional_render_enabled, uses_drawid);
 
+      genX(emit_xe2_l1_flush_after_mesh)(cmd_buffer);
+
       offset += stride;
    }
 
@@ -2358,6 +2376,8 @@ genX(CmdDrawMeshTasksIndirectCountEXT)(
       mesh_load_indirect_parameters_3dmesh_3d(cmd_buffer, &b, draw, uses_drawid, i);
 
       emit_indirect_3dmesh_3d(&cmd_buffer->batch, true, uses_drawid);
+
+      genX(emit_xe2_l1_flush_after_mesh)(cmd_buffer);
 
       offset += stride;
    }
