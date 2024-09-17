@@ -7096,6 +7096,8 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
       srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[1]);
       srcs[MEMORY_LOGICAL_COORD_COMPONENTS] =
          brw_imm_ud(nir_image_intrinsic_coord_components(instr));
+      /** TGM messages *must* set base offset to 0 */
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = brw_imm_ud(0);
 
       data_src = 3;
       break;
