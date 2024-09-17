@@ -4482,14 +4482,22 @@ static const nir_src
 addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
 {
    switch(instr->intrinsic) {
+   case nir_intrinsic_store_global:
    case nir_intrinsic_store_shared:
    case nir_intrinsic_store_shared_block_intel:
+   case nir_intrinsic_store_global_block_intel:
       return instr->src[1];
+   case nir_intrinsic_load_global:
    case nir_intrinsic_load_shared:
+   case nir_intrinsic_global_atomic:
    case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_global_atomic_swap:
    case nir_intrinsic_shared_atomic_swap:
+   case nir_intrinsic_load_global_constant:
    case nir_intrinsic_load_shared_block_intel:
+   case nir_intrinsic_load_global_block_intel:
    case nir_intrinsic_load_shared_uniform_block_intel:
+   case nir_intrinsic_load_global_constant_uniform_block_intel:
       return instr->src[0];
    case nir_intrinsic_load_ssbo:
    case nir_intrinsic_ssbo_atomic:
@@ -7242,7 +7250,9 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
    case nir_intrinsic_store_global_block_intel:
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_UNTYPED);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
-      srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[is_store ? 1 : 0]);
+      srcs[MEMORY_LOGICAL_ADDRESS] = base_address_for_instr(ntb, bld, instr);
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+         brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
 
       data_src = is_atomic ? 1 : 0;
       break;
