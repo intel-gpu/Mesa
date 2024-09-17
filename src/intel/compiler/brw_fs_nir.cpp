@@ -4478,6 +4478,48 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
    }
 }
 
+static const nir_src
+addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
+{
+   switch(instr->intrinsic) {
+   case nir_intrinsic_store_shared:
+   case nir_intrinsic_store_shared_block_intel:
+      return instr->src[1];
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
+   case nir_intrinsic_load_shared_block_intel:
+   case nir_intrinsic_load_shared_uniform_block_intel:
+      return instr->src[0];
+   default:
+      unreachable("Unhandled intrinsic");
+   }
+}
+
+static const brw_reg
+base_address_for_instr(nir_to_brw_state &ntb, const fs_builder &bld,
+                       const nir_intrinsic_instr *instr)
+{
+   fs_visitor *s = (fs_visitor *)bld.shader;
+   const intel_device_info *devinfo = s->devinfo;
+   const nir_src src = addr_reg_src_for_instr(instr);
+   const brw_reg addr = get_nir_src(ntb, src);
+   const int base = nir_intrinsic_has_base(instr) ?
+      nir_intrinsic_base(instr) :
+      0;
+
+   if (nir_src_is_const(src))
+      return brw_imm_ud(base + nir_src_as_uint(src));
+
+   if (!base || devinfo->ver >= 20) {
+      return addr;
+   } else {
+      brw_reg addr_off = bld.vgrf(BRW_TYPE_UD);
+      bld.ADD(addr_off, addr, brw_imm_ud(base));
+      return addr_off;
+   }
+}
+
 static unsigned
 brw_workgroup_size(fs_visitor &s)
 {
@@ -7130,13 +7172,9 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
    case nir_intrinsic_load_shared_uniform_block_intel: {
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_SHARED_LOCAL);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
-
-      const nir_src &nir_src = instr->src[is_store ? 1 : 0];
-
-      srcs[MEMORY_LOGICAL_ADDRESS] = nir_src_is_const(nir_src) ?
-         brw_imm_ud(nir_intrinsic_base(instr) + nir_src_as_uint(nir_src)) :
-         bld.ADD(retype(get_nir_src(ntb, nir_src), BRW_TYPE_UD),
-                 brw_imm_ud(nir_intrinsic_base(instr)));
+      srcs[MEMORY_LOGICAL_ADDRESS] = base_address_for_instr(ntb, bld, instr);
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+         brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
 
       data_src = is_atomic ? 1 : 0;
       no_mask_handle = true;
