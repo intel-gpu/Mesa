@@ -4491,6 +4491,16 @@ addr_reg_src_for_instr(const nir_intrinsic_instr *instr)
    case nir_intrinsic_load_shared_block_intel:
    case nir_intrinsic_load_shared_uniform_block_intel:
       return instr->src[0];
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_ssbo_atomic:
+   case nir_intrinsic_ssbo_atomic_swap:
+   case nir_intrinsic_load_ssbo_block_intel:
+   case nir_intrinsic_load_ubo_uniform_block_intel:
+   case nir_intrinsic_load_ssbo_uniform_block_intel:
+      return instr->src[1];
+   case nir_intrinsic_store_ssbo:
+   case nir_intrinsic_store_ssbo_block_intel:
+      return instr->src[2];
    default:
       unreachable("Unhandled intrinsic");
    }
@@ -7158,8 +7168,9 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
                     LSC_ADDR_SURFTYPE_BSS : LSC_ADDR_SURFTYPE_BTI);
       srcs[MEMORY_LOGICAL_BINDING] =
          get_nir_buffer_intrinsic_index(ntb, bld, instr, &no_mask_handle);
-      srcs[MEMORY_LOGICAL_ADDRESS] =
-         get_nir_src(ntb, instr->src[is_store ? 2 : 1]);
+      srcs[MEMORY_LOGICAL_ADDRESS] = base_address_for_instr(ntb, bld, instr);
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = nir_intrinsic_has_base(instr) ?
+         brw_imm_ud(nir_intrinsic_base(instr)) : brw_imm_ud(0);
 
       data_src = is_atomic ? 2 : 0;
       break;
