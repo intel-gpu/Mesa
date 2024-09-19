@@ -4634,6 +4634,7 @@ fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
       srcs[MEMORY_LOGICAL_DATA_SIZE] = brw_imm_ud(LSC_DATA_SIZE_D32);
       srcs[MEMORY_LOGICAL_COMPONENTS] = brw_imm_ud(3);
       srcs[MEMORY_LOGICAL_FLAGS] = brw_imm_ud(0);
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = brw_imm_ud(0);
 
       fs_inst *inst =
          bld.emit(SHADER_OPCODE_MEMORY_LOAD_LOGICAL,
@@ -7227,6 +7228,8 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
          srcs[MEMORY_LOGICAL_ADDRESS] =
             swizzle_nir_scratch_addr(ntb, bld, addr, dword_aligned);
       }
+
+      srcs[MEMORY_LOGICAL_SRC_BASE_OFFSET] = brw_imm_ud(0);
 
       if (is_store)
          ++s.shader_stats.spill_count;
