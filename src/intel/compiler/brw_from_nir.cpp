@@ -6606,8 +6606,7 @@ brw_from_nir_emit_intrinsic(nir_to_brw_state &ntb,
        */
       assert(devinfo->ver >= 12 && devinfo->ver <= 30);
 
-      /* Here is what the layout of SR0 looks like on Gfx12
-       * https://gfxspecs.intel.com/Predator/Home/Index/47256
+      /* Here is what the layout of SR0 looks like on Gfx12 (bspec 47256)
        *   [13:11] : Slice ID.
        *   [10:9]  : Dual-SubSlice ID
        *   [8]     : SubSlice ID
@@ -6617,8 +6616,7 @@ brw_from_nir_emit_intrinsic(nir_to_brw_state &ntb,
        *   [2:0]   : Thread ID
        *
        * Xe2: Engine 3D and GPGPU Programs, EU Overview, Registers and
-       * Register Regions, ARF Registers, State Register,
-       * https://gfxspecs.intel.com/Predator/Home/Index/56623
+       * Register Regions, ARF Registers, State Register, (bspec 56623)
        *   [15:11] : Slice ID.
        *   [9:8]   : SubSlice ID
        *   [6:4]   : EUID
@@ -6641,7 +6639,7 @@ brw_from_nir_emit_intrinsic(nir_to_brw_state &ntb,
       case BRW_TOPOLOGY_ID_DSS:
          if (devinfo->ver >= 20) {
             /* Xe2+: 3D and GPGPU Programs, Shared Functions, Ray Tracing:
-             * https://gfxspecs.intel.com/Predator/Home/Index/56936
+             * (bspec 56936)
              *
              * Note: DSSID in all formulas below is a logical identifier of an
              * XeCore (a value that goes from 0 to (number_of_slices *
@@ -6693,8 +6691,7 @@ brw_from_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
          if (devinfo->ver >= 20) {
             /* Xe2+: Graphics Engine, 3D and GPGPU Programs, Shared Functions
-             * Ray Tracing,
-             * https://gfxspecs.intel.com/Predator/Home/Index/56936
+             * Ray Tracing, (bspec 56936)
              *
              * SyncStackID = (EUID[2:0] <<  8) | (ThreadID[2:0] << 4) |
              *               SIMDLaneID[3:0];
