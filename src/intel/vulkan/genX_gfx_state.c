@@ -2878,7 +2878,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 
 #if INTEL_WA_14018283232_GFX_VER
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_WA_14018283232))
-      genX(batch_emit_wa_14018283232)(&cmd_buffer->batch);
+      if (intel_needs_workaround(device->info, 14018283232))
+         genX(batch_emit_wa_14018283232)(&cmd_buffer->batch);
 #endif
 
 #if GFX_VER == 9
