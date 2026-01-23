@@ -21,10 +21,10 @@
  * IN THE SOFTWARE.
  */
 
+#include "util/stack_array.h"
 #include "nir.h"
 #include "nir_builder.h"
 #include "nir_control_flow.h"
-#include "nir_vla.h"
 
 /*
  * TODO: write a proper inliner for GPUs.
@@ -171,12 +171,13 @@ static bool inline_functions_pass(nir_builder *b,
     * to an SSA value first.
     */
    const unsigned num_params = call->num_params;
-   NIR_VLA(nir_def *, params, num_params);
+   STACK_ARRAY(nir_def *, params, num_params);
    for (unsigned i = 0; i < num_params; i++) {
       params[i] = call->params[i].ssa;
    }
 
    nir_inline_function_impl(b, call->callee->impl, params, NULL);
+   STACK_ARRAY_FINISH(params);
    return true;
 }
 
